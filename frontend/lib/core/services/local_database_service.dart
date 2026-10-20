@@ -84,6 +84,69 @@ class LocalDatabaseService {
     }
   }
 
+  /// Permanently deletes the local SQLite database for the given user,
+  /// removing all session metrics, fillers, achievements, sync outbox rows, and cursors.
+  Future<void> wipeUserData(String userId) async {
+    ensureFfiInitialized();
+    final sanitizedUserId = userId.isEmpty
+        ? 'guest'
+        : userId.replaceAll(RegExp(r'[^a-zA-Z0-9_-]'), '_');
+
+    if (_db != null && _db!.isOpen) {
+      if (_currentUserId == sanitizedUserId) {
+        await close();
+      }
+    }
+
+    final dbPath = await _resolveDbPath('pitch_coach_$sanitizedUserId.db');
+    try {
+      await deleteDatabase(dbPath);
+      debugPrint('[LocalDatabaseService] Successfully wiped local DB: $dbPath');
+    } catch (e) {
+      debugPrint('[LocalDatabaseService] Notice during deleteDatabase for $dbPath: $e');
+    }
+
+    if (_currentUserId == sanitizedUserId) {
+      _currentUserId = null;
+    }
+  }
+
+  /// Wipes all local SQLite databases (the user's DB and any guest DB).
+  Future<void> wipeAllLocalDatabases(String userId) async {
+    await wipeUserData(userId);
+    await wipeUserData('guest');
+    await close();
+    _currentUserId = null;
+
+    final foldersToCheck = <String>[];
+    try {
+      foldersToCheck.add(await getDatabasesPath());
+    } catch (_) {}
+    try {
+      final docs = await getApplicationDocumentsDirectory();
+      foldersToCheck.add(docs.path);
+    } catch (_) {}
+
+    for (final folder in foldersToCheck) {
+      try {
+        final dir = Directory(folder);
+        if (await dir.exists()) {
+          final entities = dir.listSync();
+          for (final entity in entities) {
+            if (entity is File) {
+              final name = p.basename(entity.path);
+              if (name.startsWith('pitch_coach_')) {
+                try {
+                  await entity.delete();
+                } catch (_) {}
+              }
+            }
+          }
+        }
+      } catch (_) {}
+    }
+  }
+
   Future<String> _resolveDbPath(String fileName) async {
     try {
       final dbFolder = await getDatabasesPath();
@@ -637,8 +700,9 @@ class LocalDatabaseService {
     String userId, {
     int days = 7,
     int tzOffsetMinutes = 330,
+    DateTime? asOf,
   }) async {
-    final nowLocal = DateTime.now().toUtc().add(
+    final nowLocal = (asOf ?? DateTime.now()).toUtc().add(
       Duration(minutes: tzOffsetMinutes),
     );
     final cutoffDate = _formatDate(nowLocal.subtract(Duration(days: days)));

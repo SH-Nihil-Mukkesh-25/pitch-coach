@@ -340,6 +340,11 @@ venv\Scripts\activate
 # 3. Install required Python packages
 pip install -r requirements.txt
 
+# Prerequisite: Install FFmpeg (required for audio decoding of .m4a, .mp3, .wav, .webm)
+# Windows: choco install ffmpeg  OR  winget install Gyan.FFmpeg
+# macOS:   brew install ffmpeg
+# Linux:   sudo apt-get install ffmpeg
+
 # 4. Create your environment file from template
 copy .env.example .env
 

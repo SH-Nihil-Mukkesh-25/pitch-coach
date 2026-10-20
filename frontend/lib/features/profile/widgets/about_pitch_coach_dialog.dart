@@ -37,13 +37,22 @@ class AboutPitchCoachDialog extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                gradient: AppColors.primaryGradient,
-                shape: BoxShape.circle,
+            ClipRRect(
+              borderRadius: BorderRadius.circular(18),
+              child: Image.asset(
+                'assets/images/app_icon.png',
+                width: 68,
+                height: 68,
+                fit: BoxFit.cover,
+                errorBuilder: (context, error, stackTrace) => Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    gradient: AppColors.primaryGradient,
+                    shape: BoxShape.circle,
+                  ),
+                  child: const AppIcon(AppIcons.mic, size: 32, color: Colors.white),
+                ),
               ),
-              child: const AppIcon(AppIcons.mic, size: 32, color: Colors.white),
             ),
             const SizedBox(height: 16),
             Text(

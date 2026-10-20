@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pitch_coach/core/models/practice_drill.dart';
+import 'package:pitch_coach/core/providers/practice_plan_provider.dart';
 import 'package:pitch_coach/core/repositories/practice_plan_repository.dart';
 
 void main() {
@@ -129,6 +130,124 @@ void main() {
       expect(find.text('30s'), findsOneWidget);
       expect(find.text('Why: Mastering start presence.'), findsOneWidget);
       expect(find.text('Start Drill'), findsOneWidget);
+    });
+  });
+
+  group('PracticePlanProvider & Dropdown Disappearance', () {
+    test('PracticePlanProvider manages pending and completed drills', () async {
+      PracticePlanRepository.instance.resetPlan();
+      final provider = PracticePlanProvider();
+      await provider.loadPlan(isGuest: true);
+
+      expect(provider.allDrills.length, 3);
+      expect(provider.pendingDrills.length, 3);
+      expect(provider.completedDrills.length, 0);
+      expect(provider.allCompleted, isFalse);
+      expect(provider.isCollapsed, isFalse);
+
+      // Toggle dropdown
+      provider.toggleCollapsed();
+      expect(provider.isCollapsed, isTrue);
+      provider.toggleCollapsed();
+      expect(provider.isCollapsed, isFalse);
+
+      // Complete 1st drill
+      final firstId = provider.pendingDrills.first.id;
+      await provider.completeDrill(firstId, syncToBackend: false);
+
+      expect(provider.pendingDrills.length, 2);
+      expect(provider.completedDrills.length, 1);
+      expect(provider.completedDrills.first.id, firstId);
+      expect(provider.hasPendingDrills, isTrue);
+      expect(provider.allCompleted, isFalse);
+
+      // Complete 2nd and 3rd drills
+      for (final drill in List.of(provider.pendingDrills)) {
+        await provider.completeDrill(drill.id, syncToBackend: false);
+      }
+
+      expect(provider.pendingDrills.length, 0);
+      expect(provider.completedDrills.length, 3);
+      expect(provider.hasPendingDrills, isFalse);
+      expect(provider.allCompleted, isTrue);
+
+      provider.dispose();
+    });
+
+    testWidgets('Dropdown collapses and expands, and completed drill disappears', (tester) async {
+      PracticePlanRepository.instance.resetPlan();
+      final provider = PracticePlanProvider();
+      await provider.loadPlan(isGuest: true);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: ListenableBuilder(
+              listenable: provider,
+              builder: (context, _) {
+                if (!provider.hasPendingDrills) {
+                  return const Text('All Drills Completed - Section Disappeared');
+                }
+
+                return Column(
+                  children: [
+                    InkWell(
+                      onTap: () => provider.toggleCollapsed(),
+                      child: Text('Targeted Drills (${provider.pendingDrills.length} left)'),
+                    ),
+                    if (!provider.isCollapsed)
+                      ...provider.pendingDrills.map((drill) => Row(
+                            key: ValueKey(drill.id),
+                            children: [
+                              Expanded(child: Text(drill.title)),
+                              ElevatedButton(
+                                onPressed: () => provider.completeDrill(drill.id, syncToBackend: false),
+                                child: Text('Complete ${drill.id}'),
+                              ),
+                            ],
+                          )),
+                  ],
+                );
+              },
+            ),
+          ),
+        ),
+      );
+
+      // Initially expanded
+      expect(find.text('Targeted Drills (3 left)'), findsOneWidget);
+      expect(find.text('30 Seconds, Zero Fillers'), findsOneWidget);
+
+      // Collapse dropdown
+      await tester.tap(find.text('Targeted Drills (3 left)'));
+      await tester.pumpAndSettle();
+      expect(provider.isCollapsed, isTrue);
+      expect(find.text('30 Seconds, Zero Fillers'), findsNothing);
+
+      // Re-expand dropdown
+      await tester.tap(find.text('Targeted Drills (3 left)'));
+      await tester.pumpAndSettle();
+      expect(provider.isCollapsed, isFalse);
+      expect(find.text('30 Seconds, Zero Fillers'), findsOneWidget);
+
+      // Complete 1st drill -> that specific drill disappears!
+      await tester.tap(find.text('Complete drill_default_zero_fillers'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Targeted Drills (2 left)'), findsOneWidget);
+      expect(find.text('30 Seconds, Zero Fillers'), findsNothing);
+      expect(find.text('Steady Cadence (120–160 WPM)'), findsOneWidget);
+
+      // Complete remaining drills -> entire section disappears!
+      await tester.tap(find.text('Complete drill_default_pacing_metronome'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Complete drill_default_controlled_pauses'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('All Drills Completed - Section Disappeared'), findsOneWidget);
+      expect(find.text('Targeted Drills (0 left)'), findsNothing);
+
+      provider.dispose();
     });
   });
 }

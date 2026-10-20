@@ -21,7 +21,7 @@ from interviewer.schemas import (
 
 logger = logging.getLogger(__name__)
 
-LLM_MODEL = "llama-3.3-70b-versatile"
+LLM_MODEL = "qwen/qwen3.8-27b"
 MAX_FOLLOW_UPS = 2
 
 
@@ -101,7 +101,7 @@ def evaluate_interview_turn(
 
     settings = get_settings()
     api_key = groq_api_key or settings.GROQ_API_KEY or settings.GROQ_AUDIO_API_KEY
-    model = model_override or getattr(settings, "LLM_MODEL", LLM_MODEL) or LLM_MODEL
+    model = model_override or getattr(settings, "GROQ_LLM_MODEL", None) or getattr(settings, "LLM_MODEL", None) or LLM_MODEL
 
     # If no key, use deterministic evaluation
     if not api_key:
@@ -202,7 +202,7 @@ def evaluate_interview_turn(
         return TurnEvaluateResponse(
             follow_up=follow_up if is_vague else None,
             move_on=not is_vague,
-            reason=f"{reason} (Evaluated via fallback: {exc})",
+            reason=reason,
             is_vague=is_vague,
             latency_ms=elapsed_ms,
         )
@@ -224,7 +224,7 @@ def score_full_exchange(
     start_time = time.perf_counter()
     settings = get_settings()
     api_key = groq_api_key or settings.GROQ_API_KEY or settings.GROQ_AUDIO_API_KEY
-    model = model_override or getattr(settings, "LLM_MODEL", LLM_MODEL) or LLM_MODEL
+    model = model_override or getattr(settings, "GROQ_LLM_MODEL", None) or getattr(settings, "LLM_MODEL", None) or LLM_MODEL
 
     exchange_text = "\n".join([f"{t.role.upper()}: {t.content}" for t in turns])
 

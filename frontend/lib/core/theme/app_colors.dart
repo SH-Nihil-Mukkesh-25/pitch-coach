@@ -2,13 +2,13 @@ import 'package:flutter/material.dart';
 
 /// Centralized color palette for Pitch Coach design system.
 abstract class AppColors {
-  // Dark surfaces — deep indigo night
-  static const Color background = Color(0xFF07070F);
-  static const Color backgroundElevated = Color(0xFF10101C);
-  static const Color cardDark = Color(0xFF161428);
-  static const Color cardDarkElevated = Color(0xFF1E1B34);
-  static const Color cardDarkBorder = Color(0xFF34304F);
-  static const Color glassDark = Color(0xCC141226);
+  // Dark surfaces — Apple Space Black & System Gray materials
+  static const Color background = Color(0xFF000000);
+  static const Color backgroundElevated = Color(0xFF121214);
+  static const Color cardDark = Color(0xFF1C1C1E);
+  static const Color cardDarkElevated = Color(0xFF2C2C2E);
+  static const Color cardDarkBorder = Color(0xFF38383A);
+  static const Color glassDark = Color(0xCC1C1C1E);
 
   // Light surfaces
   static const Color surfaceLight = Color(0xFFF6F5FB);
@@ -43,10 +43,9 @@ abstract class AppColors {
   static const LinearGradient accentGradient = auroraGradient;
 
   static const LinearGradient heroDarkGradient = LinearGradient(
-    colors: [Color(0xFF07070F), Color(0xFF12101F), Color(0xFF0A1020)],
+    colors: [Color(0xFF000000), Color(0xFF0A0A0E)],
     begin: Alignment.topCenter,
     end: Alignment.bottomCenter,
-    stops: [0.0, 0.55, 1.0],
   );
 
   static const LinearGradient heroLightGradient = LinearGradient(
@@ -56,7 +55,7 @@ abstract class AppColors {
   );
 
   static const LinearGradient cardDarkGradient = LinearGradient(
-    colors: [Color(0xFF1C1932), Color(0xFF141226)],
+    colors: [Color(0xFF242428), Color(0xFF1C1C1E)],
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
   );
@@ -71,19 +70,19 @@ abstract class AppColors {
   // Text
   static const Color textPrimaryDark = Color(0xFF15132A);
   static const Color textSecondary = Color(0xFF6B6885);
-  static const Color textSecondaryOnDark = Color(0xFFB0ACC9);
-  static const Color textOnDark = Color(0xFFF5F3FF);
-  static const Color textMutedOnDark = Color(0xFF8B87A8);
+  static const Color textSecondaryOnDark = Color(0xFF8E8E93);
+  static const Color textOnDark = Color(0xFFFFFFFF);
+  static const Color textMutedOnDark = Color(0xFF636366);
 
   // Status
-  static const Color successGreen = Color(0xFF34D399);
-  static const Color warningAmber = Color(0xFFFBBF24);
-  static const Color dangerRed = Color(0xFFF87171);
+  static const Color successGreen = Color(0xFF30D158);
+  static const Color warningAmber = Color(0xFFFF9F0A);
+  static const Color dangerRed = Color(0xFFFF453A);
   static const Color errorRed = dangerRed;
 
   // UI chrome
   static const Color divider = Color(0xFFE7E5F0);
-  static const Color dividerDark = Color(0xFF2E2A48);
+  static const Color dividerDark = Color(0xFF38383A);
   static const Color cardShadow = Color(0x140C0C1A);
 
   static bool isDark(BuildContext context) =>

@@ -130,4 +130,15 @@ class GamificationProvider extends ChangeNotifier {
       notifyListeners();
     }
   }
+
+  /// Resets challenges, leaderboard, and points in memory.
+  void reset() {
+    _challenges = [];
+    _leaderboard = LeaderboardResponse.empty;
+    _isLoading = false;
+    _isClaiming = false;
+    _error = null;
+    _earnedPoints = 0;
+    notifyListeners();
+  }
 }

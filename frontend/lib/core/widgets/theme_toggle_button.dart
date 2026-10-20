@@ -67,7 +67,7 @@ class ThemeToggleButton extends StatelessWidget {
               child: Center(
                 key: ValueKey(isDark),
                 child: AppIcon(
-                  isDark ? AppIcons.sunrise : AppIcons.moon,
+                  isDark ? AppIcons.sun : AppIcons.moon,
                   size: size * 0.48,
                   color: isDark ? const Color(0xFFFFD56A) : iconColor,
                 ),

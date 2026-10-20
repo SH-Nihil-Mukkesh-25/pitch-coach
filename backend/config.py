@@ -50,7 +50,7 @@ class Settings(BaseSettings):
     GROQ_API_KEY: str = ""
     # Unified default text model across audio coach and slide coach
     GROQ_WHISPER_MODEL: str = "whisper-large-v3-turbo"
-    GROQ_LLM_MODEL: str = "openai/gpt-oss-120b"
+    GROQ_LLM_MODEL: str = "qwen/qwen3.8-27b"
 
     # Firebase Admin SDK — path to service-account JSON
     FIREBASE_SERVICE_ACCOUNT_PATH: str = "./firebase_service_account.json"

@@ -6,6 +6,8 @@ import 'package:pitch_coach/core/providers/stats_provider.dart';
 import 'package:pitch_coach/core/providers/user_provider.dart';
 import 'package:pitch_coach/features/profile/profile_screen.dart';
 import 'package:pitch_coach/features/profile/widgets/practice_goals_sheet.dart';
+import 'package:pitch_coach/core/widgets/app_icon.dart';
+import 'package:pitch_coach/core/widgets/theme_toggle_button.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -124,6 +126,43 @@ void main() {
       },
     );
 
+    test('Apple design sun icon asset resolves correctly', () {
+      expect(AppIcons.sun, 'sun');
+      expect(AppIcons.resolveAssetPath('sun'), 'assets/icons/sun.svg');
+      expect(AppIcons.resolveAssetPath('light_mode'), 'assets/icons/sun.svg');
+      expect(AppIcons.resolveAssetPath('brightness'), 'assets/icons/sun.svg');
+      expect(AppIcons.resolveAssetPath('sunrise'), 'assets/icons/sunrise.svg');
+    });
+
+    testWidgets('ThemeToggleButton displays AppIcons.sun in dark mode', (
+      tester,
+    ) async {
+      final settingsProvider = SettingsProvider();
+      await settingsProvider.initialize();
+      await settingsProvider.setThemeMode(ThemeMode.dark);
+
+      await tester.pumpWidget(
+        MultiProvider(
+          providers: [
+            ChangeNotifierProvider<SettingsProvider>.value(
+              value: settingsProvider,
+            ),
+          ],
+          child: const MaterialApp(
+            home: Scaffold(
+              body: ThemeToggleButton(),
+            ),
+          ),
+        ),
+      );
+
+      await tester.pumpAndSettle();
+      final appIconFinder = find.byType(AppIcon);
+      expect(appIconFinder, findsOneWidget);
+      final appIconWidget = tester.widget<AppIcon>(appIconFinder);
+      expect(appIconWidget.name, AppIcons.sun);
+    });
+
     testWidgets(
       'PracticeGoalsSheet allows setting time, days, and weekly targets',
       (tester) async {
@@ -189,5 +228,109 @@ void main() {
         expect(validMessage.trim().length >= 10, isTrue);
       },
     );
+
+    testWidgets(
+      'Delete Account dialog renders with custom styled field and enables Delete Forever only when DELETE is typed',
+      (tester) async {
+        final userProvider = UserProvider();
+        final statsProvider = StatsProvider();
+        final settingsProvider = SettingsProvider();
+        await settingsProvider.initialize();
+
+        await tester.pumpWidget(
+          MultiProvider(
+            providers: [
+              ChangeNotifierProvider<UserProvider>.value(value: userProvider),
+              ChangeNotifierProvider<StatsProvider>.value(value: statsProvider),
+              ChangeNotifierProvider<SettingsProvider>.value(
+                value: settingsProvider,
+              ),
+            ],
+            child: const MaterialApp(home: ProfileScreen()),
+          ),
+        );
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 300));
+
+        // Scroll to find "Delete Account" button
+        final deleteButtonFinder = find.text('Delete Account');
+        await tester.scrollUntilVisible(
+          deleteButtonFinder,
+          200,
+          scrollable: find.byType(Scrollable).first,
+        );
+        expect(deleteButtonFinder, findsOneWidget);
+
+        // Tap Delete Account to open dialog
+        await tester.tap(deleteButtonFinder);
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 300));
+
+        // Verify dialog components
+        expect(find.text('Delete Account'), findsNWidgets(2)); // tile + dialog title
+        expect(
+          find.text(
+            'This action is irreversible. All speech recordings, scores, slide decks, and settings will be permanently erased.',
+          ),
+          findsOneWidget,
+        );
+        expect(
+          find.byWidgetPredicate(
+            (w) =>
+                w is RichText &&
+                w.text.toPlainText().contains('Type DELETE to confirm:'),
+          ),
+          findsOneWidget,
+        );
+        expect(find.text('Cancel'), findsOneWidget);
+        expect(find.text('Delete Forever'), findsOneWidget);
+
+        // "Delete Forever" button is initially disabled
+        final deleteForeverBtn = tester.widget<ElevatedButton>(
+          find.widgetWithText(ElevatedButton, 'Delete Forever'),
+        );
+        expect(deleteForeverBtn.enabled, isFalse);
+
+        // Verify TextField decoration has custom focusedBorder and visible hintText
+        final textField = tester.widget<TextField>(find.byType(TextField));
+        expect(textField.decoration?.focusedBorder, isNotNull);
+        expect(textField.decoration?.hintText, 'DELETE');
+        expect(textField.decoration?.hintStyle?.color, isNotNull);
+
+        // Type 'del' (incomplete)
+        await tester.enterText(find.byType(TextField), 'del');
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 100));
+        final deleteForeverBtn2 = tester.widget<ElevatedButton>(
+          find.widgetWithText(ElevatedButton, 'Delete Forever'),
+        );
+        expect(deleteForeverBtn2.enabled, isFalse);
+
+        // Type 'DELETE' (match)
+        await tester.enterText(find.byType(TextField), 'DELETE');
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 100));
+        final deleteForeverBtn3 = tester.widget<ElevatedButton>(
+          find.widgetWithText(ElevatedButton, 'Delete Forever'),
+        );
+        expect(deleteForeverBtn3.enabled, isTrue);
+
+        // Tap Cancel to dismiss
+        await tester.tap(find.text('Cancel'));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 300));
+        expect(
+          find.byWidgetPredicate(
+            (w) =>
+                w is RichText &&
+                w.text.toPlainText().contains('Type DELETE to confirm:'),
+          ),
+          findsNothing,
+        );
+      },
+    );
   });
 }
+
+
+

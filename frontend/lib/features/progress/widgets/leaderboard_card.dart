@@ -31,27 +31,34 @@ class LeaderboardCard extends StatelessWidget {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: AppColors.accentTeal.withValues(alpha: 0.12),
-                      borderRadius: BorderRadius.circular(10),
+              Expanded(
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: AppColors.accentTeal.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: const Icon(
+                        Icons.leaderboard_rounded,
+                        color: AppColors.accentTeal,
+                        size: 20,
+                      ),
                     ),
-                    child: const Icon(
-                      Icons.leaderboard_rounded,
-                      color: AppColors.accentTeal,
-                      size: 20,
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        'Weekly Leaderboard',
+                        style: AppTextStyles.headingMOf(context),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     ),
-                  ),
-                  const SizedBox(width: 10),
-                  Text(
-                    'Weekly Leaderboard',
-                    style: AppTextStyles.headingMOf(context),
-                  ),
-                ],
+                  ],
+                ),
               ),
+              const SizedBox(width: 8),
               if (board.weekId.isNotEmpty)
                 Container(
                   padding: const EdgeInsets.symmetric(
@@ -75,9 +82,9 @@ class LeaderboardCard extends StatelessWidget {
           const SizedBox(height: 6),
           Text(
             'Speaker rankings reset every Monday at 00:00 UTC.',
-            style: AppTextStyles.captionOf(context).copyWith(
-              color: AppColors.textSecondaryOf(context),
-            ),
+            style: AppTextStyles.captionOf(
+              context,
+            ).copyWith(color: AppColors.textSecondaryOf(context)),
           ),
           const SizedBox(height: 14),
 
@@ -156,10 +163,9 @@ class LeaderboardCard extends StatelessWidget {
               children: [
                 Text(
                   'Opt-in to Public Rankings',
-                  style: AppTextStyles.bodyBoldOf(context).copyWith(
-                    fontWeight: FontWeight.w600,
-                    fontSize: 13,
-                  ),
+                  style: AppTextStyles.bodyBoldOf(
+                    context,
+                  ).copyWith(fontWeight: FontWeight.w600, fontSize: 13),
                 ),
                 Text(
                   provider.isOptedIn
@@ -223,10 +229,9 @@ class LeaderboardCard extends StatelessWidget {
               children: [
                 Text(
                   'Your Standing: ${currentUserEntry.displayName}',
-                  style: AppTextStyles.bodyBoldOf(context).copyWith(
-                    fontWeight: FontWeight.w700,
-                    fontSize: 13,
-                  ),
+                  style: AppTextStyles.bodyBoldOf(
+                    context,
+                  ).copyWith(fontWeight: FontWeight.w700, fontSize: 13),
                   overflow: TextOverflow.ellipsis,
                 ),
                 Text(

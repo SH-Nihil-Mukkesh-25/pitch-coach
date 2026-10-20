@@ -90,6 +90,11 @@ def _to_result(s: PracticeSession) -> SessionResult:
         energy_curve=getattr(s, "energy_curve", None) or [],
         pitch_variation_score=getattr(s, "pitch_variation_score", None),
         volume_consistency_score=getattr(s, "volume_consistency_score", None),
+        no_speech=getattr(s, "no_speech", None),
+        active_wpm=getattr(s, "active_wpm", None),
+        repetitions_count=getattr(s, "repetitions_count", None),
+        rhetorical_pause_count=getattr(s, "rhetorical_pause_count", None),
+        disfluent_pause_count=getattr(s, "disfluent_pause_count", None),
     )
 
 
@@ -167,6 +172,7 @@ def _run_pipeline_bg(
 
         doc_data = doc.to_dict() or {}
         template_id = doc_data.get("template_id")
+        user_id = doc_data.get("user_id")
 
         local_path, is_temp = _fetch_audio(audio_ref)
         analysis = analyze_audio(
@@ -177,6 +183,7 @@ def _run_pipeline_bg(
             whisper_model=settings.GROQ_WHISPER_MODEL,
             llm_model=settings.GROQ_LLM_MODEL,
             template_id=template_id,
+            mode=doc_data.get("mode", "interview"),
         )
 
         doc_ref.update({
@@ -203,6 +210,11 @@ def _run_pipeline_bg(
             "template_sections_missing": analysis.template_sections_missing,
             "template_id": analysis.template_id,
             "duration_seconds": analysis.duration_seconds,
+            "no_speech": getattr(analysis, "no_speech", False),
+            "active_wpm": getattr(analysis, "active_wpm", analysis.wpm),
+            "repetitions_count": getattr(analysis, "repetitions_count", 0),
+            "rhetorical_pause_count": getattr(analysis, "rhetorical_pause_count", 0),
+            "disfluent_pause_count": getattr(analysis, "disfluent_pause_count", 0),
             "ai_feedback": [
                 {
                     "category": f.category,
@@ -244,7 +256,8 @@ def _run_pipeline_bg(
         # Evaluate unlock rules after each analyzed session
         try:
             from achievements.service import evaluate_user_achievements
-            evaluate_user_achievements(user_id, db=db)
+            if user_id:
+                evaluate_user_achievements(user_id, db=db)
         except Exception as ach_err:
             logger.warning("[pipeline] Achievement evaluation error: %s", ach_err)
 

@@ -1,10 +1,13 @@
 import 'package:equatable/equatable.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import '../providers/user_provider.dart';
 import '../repositories/auth_repository.dart';
 import '../repositories/firebase_auth_repository.dart';
+import '../repositories/session_repository.dart';
 import '../services/local_database_service.dart';
 import '../services/notification_service.dart';
+import '../services/upload_queue_service.dart';
 
 /// Immutable state for user authentication and profile data.
 class UserState extends Equatable {
@@ -283,9 +286,14 @@ class UserCubit extends Cubit<UserState> {
   Future<bool> deleteAccount() async {
     emit(state.copyWith(isLoading: true));
     try {
+      final userId = state.user.id;
       if (!state.isGuest && await _authRepo.hasStoredTokens) {
         await _authRepo.deleteAccount();
       }
+      await LocalDatabaseService.instance.wipeAllLocalDatabases(userId);
+      await UploadQueueService.instance.clearQueue();
+      await SessionRepository.instance.clearAllLocalAudioFiles();
+      await const FlutterSecureStorage().deleteAll();
       await logout();
       return true;
     } catch (e) {

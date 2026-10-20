@@ -299,6 +299,23 @@ class SessionResultsProvider extends ChangeNotifier {
     });
   }
 
+  /// Cancels polling, clears in-memory session results, and removes persisted processing session id.
+  Future<void> reset() async {
+    _pollTimer?.cancel();
+    _result = null;
+    _state = ResultsLoadState.loading;
+    _errorMessage = null;
+    _activeSessionId = null;
+    _activeTopic = null;
+    _activeMode = null;
+    _isBackgroundProcessing = false;
+    _completedSessionToAnnounce = null;
+    try {
+      await _storage.delete(key: _storageActiveSessionKey);
+    } catch (_) {}
+    notifyListeners();
+  }
+
   @override
   void dispose() {
     _disposed = true;

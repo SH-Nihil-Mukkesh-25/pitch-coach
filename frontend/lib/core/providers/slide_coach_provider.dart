@@ -481,6 +481,36 @@ class SlideCoachProvider extends ChangeNotifier {
     }
   }
 
+  /// Cancels polling, clears cached decks and in-memory state, and wipes saved active deck ID.
+  Future<void> reset() async {
+    _pollTimer?.cancel();
+    _patchDebounce?.cancel();
+    _isUploading = false;
+    _uploadProgress = 0.0;
+    _uploadError = null;
+    _activeDeckId = null;
+    _status = null;
+    _isPolling = false;
+    _pollError = null;
+    _completedDeckToAnnounce = null;
+    _savedDecks = [];
+    _isLoadingSavedDecks = false;
+    _savedDecksError = null;
+    _deck = null;
+    _currentSlideIndex = 0;
+    _isLoadingDeck = false;
+    _qaQuestions = [];
+    _currentQaIndex = 0;
+    _isLoadingQuestions = false;
+    _latestQaEvaluation = null;
+    _isEvaluatingAnswer = false;
+    _qaError = null;
+    try {
+      await _storage.delete(key: _storageActiveDeckKey);
+    } catch (_) {}
+    notifyListeners();
+  }
+
   @override
   void dispose() {
     _pollTimer?.cancel();

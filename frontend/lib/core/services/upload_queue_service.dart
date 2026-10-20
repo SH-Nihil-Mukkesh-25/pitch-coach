@@ -166,6 +166,22 @@ class UploadQueueService {
     }
   }
 
+  /// Wipes all pending upload items and deletes any associated local audio files.
+  Future<void> clearQueue() async {
+    final items = await getPendingUploads();
+    for (final item in items) {
+      try {
+        await deleteLocalFile(item.audioPath);
+      } catch (_) {}
+    }
+    final file = await _getQueueFile();
+    if (file != null && await file.exists()) {
+      try {
+        await file.delete();
+      } catch (_) {}
+    }
+  }
+
   /// Retries uploading a specific queued item.
   Future<SessionResult> retryUpload(PendingUploadItem item) async {
     if (!await localFileExistsAndNonEmpty(item.audioPath)) {

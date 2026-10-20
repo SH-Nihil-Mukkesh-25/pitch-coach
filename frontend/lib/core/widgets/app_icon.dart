@@ -9,6 +9,7 @@ class AppIcons {
   static const String fire = 'fire';
   static const String target = 'target';
   static const String diamond = 'diamond';
+  static const String sun = 'sun';
   static const String sunrise = 'sunrise';
   static const String trophy = 'trophy';
   static const String bell = 'bell';
@@ -43,6 +44,7 @@ class AppIcons {
     fire: 'assets/icons/fire.svg',
     target: 'assets/icons/target.svg',
     diamond: 'assets/icons/diamond.svg',
+    sun: 'assets/icons/sun.svg',
     sunrise: 'assets/icons/sunrise.svg',
     trophy: 'assets/icons/trophy.svg',
     bell: 'assets/icons/bell.svg',
@@ -80,7 +82,11 @@ class AppIcons {
     'gem': diamond,
     'clarity': diamond,
     'early_bird': sunrise,
-    'sun': sunrise,
+    'sunrise': sunrise,
+    'sun': sun,
+    'light_mode': sun,
+    'brightness': sun,
+    'day': sun,
     'award': trophy,
     'achievement': trophy,
     'reminder': bell,

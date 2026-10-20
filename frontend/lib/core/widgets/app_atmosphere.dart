@@ -1,3 +1,5 @@
+import 'dart:ui';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import '../theme/app_colors.dart';
@@ -27,7 +29,6 @@ class _AppAtmosphereState extends State<AppAtmosphere>
     final disableAnimations =
         MediaQuery.maybeDisableAnimationsOf(context) ?? false;
     if (disableAnimations) return false;
-    // Continuous backdrop motion competes with navigation/scroll on phones.
     final view = View.maybeOf(context);
     final shortest = view?.physicalSize.shortestSide;
     final dpr = view?.devicePixelRatio ?? 1.0;
@@ -98,49 +99,49 @@ class _AtmosphereBackdrop extends StatelessWidget {
           DecoratedBox(
             decoration: BoxDecoration(gradient: AppColors.heroOf(context)),
           ),
-          DecoratedBox(
-            decoration: BoxDecoration(
-              gradient: RadialGradient(
-                center: Alignment(-0.15 + t * 0.2, -0.85),
-                radius: 1.2,
-                colors: [
-                  AppColors.primaryPurple.withValues(
-                    alpha: isDark ? 0.22 : 0.12,
-                  ),
-                  Colors.transparent,
-                ],
-              ),
-            ),
-          ),
-          Positioned(
-            top: -100 + t * 16,
-            right: -60 + t * 10,
-            child: _GlowOrb(
-              size: isDark ? 240 : 200,
-              color: AppColors.primaryPurple.withValues(
-                alpha: isDark ? 0.34 : 0.14,
-              ),
-            ),
-          ),
-          Positioned(
-            bottom: 90 - t * 18,
-            left: -80,
-            child: _GlowOrb(
-              size: isDark ? 200 : 160,
-              color: AppColors.auroraCyan.withValues(
-                alpha: isDark ? 0.18 : 0.08,
-              ),
-            ),
-          ),
           if (isDark)
-            Positioned(
-              top: 240 + t * 20,
-              left: 30,
-              child: _GlowOrb(
-                size: 140,
-                color: AppColors.auroraPink.withValues(alpha: 0.12),
+            DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: RadialGradient(
+                  center: const Alignment(0.0, -0.9),
+                  radius: 0.9,
+                  colors: [
+                    const Color(0xFF6366F1).withValues(alpha: 0.07),
+                    Colors.transparent,
+                  ],
+                ),
+              ),
+            )
+          else ...[
+            DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: RadialGradient(
+                  center: Alignment(-0.15 + t * 0.2, -0.85),
+                  radius: 1.2,
+                  colors: [
+                    AppColors.primaryPurple.withValues(alpha: 0.12),
+                    Colors.transparent,
+                  ],
+                ),
               ),
             ),
+            Positioned(
+              top: -100 + t * 16,
+              right: -60 + t * 10,
+              child: _GlowOrb(
+                size: 200,
+                color: AppColors.primaryPurple.withValues(alpha: 0.14),
+              ),
+            ),
+            Positioned(
+              bottom: 90 - t * 18,
+              left: -80,
+              child: _GlowOrb(
+                size: 160,
+                color: AppColors.auroraCyan.withValues(alpha: 0.08),
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -166,7 +167,17 @@ class _GlowOrb extends StatelessWidget {
   }
 }
 
+// Apple Liquid Glass Surface
+
 /// Theme-aware frosted / elevated surface used by cards and panels.
+///
+/// Implements Apple Liquid Glass:
+///   - BackdropFilter blur (18px sigma) for frosted translucency
+///   - Specular top-left highlight via foregroundDecoration
+///   - Subtle translucent glass fill gradient
+///   - Layered ambient + brand-coloured shadow
+///
+/// Set [blur] to false for dense scrolling lists.
 class GlassSurface extends StatelessWidget {
   final Widget child;
   final EdgeInsetsGeometry? padding;
@@ -174,6 +185,7 @@ class GlassSurface extends StatelessWidget {
   final Gradient? gradient;
   final VoidCallback? onTap;
   final bool elevated;
+  final bool blur;
 
   const GlassSurface({
     super.key,
@@ -183,49 +195,106 @@ class GlassSurface extends StatelessWidget {
     this.gradient,
     this.onTap,
     this.elevated = false,
+    this.blur = true,
   });
 
   @override
   Widget build(BuildContext context) {
     final isDark = AppColors.isDark(context);
-    final decoration = BoxDecoration(
-      color: gradient == null
-          ? (elevated
-                ? AppColors.elevatedCardOf(context)
-                : AppColors.glassOf(context))
-          : null,
-      gradient:
-          gradient ??
-          (isDark
-              ? LinearGradient(
-                  colors: [
-                    AppColors.cardDarkElevated.withValues(alpha: 0.92),
-                    AppColors.cardDark.withValues(alpha: 0.88),
-                  ],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                )
-              : null),
-      borderRadius: borderRadius,
-      border: Border.all(
-        color: isDark
-            ? Colors.white.withValues(alpha: 0.08)
-            : AppColors.cardLightBorder,
+
+    final glassGradient =
+        gradient ??
+        LinearGradient(
+          colors: isDark
+              ? [
+                  Colors.white.withValues(alpha: elevated ? 0.13 : 0.09),
+                  Colors.white.withValues(alpha: elevated ? 0.07 : 0.04),
+                ]
+              : [
+                  Colors.white.withValues(alpha: elevated ? 0.96 : 0.88),
+                  Colors.white.withValues(alpha: elevated ? 0.84 : 0.72),
+                ],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        );
+
+    final specularDecoration = BoxDecoration(
+      gradient: LinearGradient(
+        begin: Alignment.topLeft,
+        end: const Alignment(0.5, 0.9),
+        colors: [
+          Colors.white.withValues(alpha: isDark ? 0.20 : 0.44),
+          Colors.white.withValues(alpha: isDark ? 0.06 : 0.12),
+          Colors.transparent,
+        ],
+        stops: const [0.0, 0.28, 1.0],
       ),
-      boxShadow: AppColors.softShadowOf(context),
+      borderRadius: borderRadius,
     );
 
-    final content = Container(
+    Widget glass = Container(
       padding: padding,
-      decoration: decoration,
+      decoration: BoxDecoration(
+        gradient: glassGradient,
+        borderRadius: borderRadius,
+        border: Border.all(
+          color: isDark
+              ? Colors.white.withValues(alpha: 0.16)
+              : Colors.white.withValues(alpha: 0.75),
+          width: 1.0,
+        ),
+      ),
+      foregroundDecoration: specularDecoration,
       child: child,
     );
 
-    if (onTap == null) return content;
+    if (blur) {
+      glass = ClipRRect(
+        borderRadius: borderRadius,
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+          child: glass,
+        ),
+      );
+    } else {
+      glass = ClipRRect(borderRadius: borderRadius, child: glass);
+    }
+
+    final List<BoxShadow> shadows = [
+      BoxShadow(
+        color: isDark
+            ? Colors.black.withValues(alpha: 0.42)
+            : Colors.black.withValues(alpha: 0.10),
+        blurRadius: 28,
+        offset: const Offset(0, 10),
+        spreadRadius: -4,
+      ),
+      BoxShadow(
+        color: isDark
+            ? Colors.black.withValues(alpha: 0.20)
+            : Colors.black.withValues(alpha: 0.04),
+        blurRadius: 8,
+        offset: const Offset(0, 2),
+      ),
+      if (isDark)
+        BoxShadow(
+          color: AppColors.primaryPurple.withValues(alpha: 0.12),
+          blurRadius: 40,
+          offset: const Offset(0, 6),
+          spreadRadius: -2,
+        ),
+    ];
+
+    Widget result = Container(
+      decoration: BoxDecoration(borderRadius: borderRadius, boxShadow: shadows),
+      child: glass,
+    );
+
+    if (onTap == null) return result;
 
     return Material(
       color: Colors.transparent,
-      child: InkWell(onTap: onTap, borderRadius: borderRadius, child: content),
+      child: InkWell(onTap: onTap, borderRadius: borderRadius, child: result),
     );
   }
 }

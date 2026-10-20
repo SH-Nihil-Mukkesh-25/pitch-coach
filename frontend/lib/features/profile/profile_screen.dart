@@ -5,7 +5,11 @@ import 'package:in_app_review/in_app_review.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:provider/provider.dart';
 import '../../core/models/lesson_model.dart';
+import '../../core/providers/gamification_provider.dart';
+import '../../core/providers/practice_plan_provider.dart';
+import '../../core/providers/session_results_provider.dart';
 import '../../core/providers/settings_provider.dart';
+import '../../core/providers/slide_coach_provider.dart';
 import '../../core/providers/stats_provider.dart';
 import '../../core/providers/user_provider.dart';
 import '../../core/services/notification_service.dart';
@@ -336,6 +340,7 @@ class _ProfileScreenState extends State<ProfileScreen>
       builder: (dialogCtx) => StatefulBuilder(
         builder: (context, setDialogState) {
           final isMatch = confirmController.text.trim() == 'DELETE';
+          final isDark = AppColors.isDark(dialogCtx);
           return AlertDialog(
             backgroundColor: AppColors.elevatedCardOf(dialogCtx),
             shape: RoundedRectangleBorder(
@@ -344,17 +349,25 @@ class _ProfileScreenState extends State<ProfileScreen>
             ),
             title: Row(
               children: [
-                const AppIcon(
-                  AppIcons.trash,
-                  color: AppColors.errorRed,
-                  size: 22,
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: AppColors.dangerRed.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const AppIcon(
+                    AppIcons.trash,
+                    color: AppColors.dangerRed,
+                    size: 20,
+                  ),
                 ),
-                const SizedBox(width: 8),
+                const SizedBox(width: 10),
                 Text(
                   'Delete Account',
-                  style: AppTextStyles.headingMOf(
-                    dialogCtx,
-                  ).copyWith(color: AppColors.errorRed),
+                  style: AppTextStyles.headingMOf(dialogCtx).copyWith(
+                    color: isDark ? AppColors.textOnDark : AppColors.textPrimaryDark,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
               ],
             ),
@@ -364,27 +377,96 @@ class _ProfileScreenState extends State<ProfileScreen>
               children: [
                 Text(
                   'This action is irreversible. All speech recordings, scores, slide decks, and settings will be permanently erased.',
-                  style: AppTextStyles.bodyMOf(dialogCtx),
-                ),
-                const SizedBox(height: 16),
-                Text(
-                  'Type DELETE to confirm:',
-                  style: AppTextStyles.caption.copyWith(
-                    fontWeight: FontWeight.bold,
-                    color: AppColors.textPrimaryOf(dialogCtx),
+                  style: AppTextStyles.bodyMOf(dialogCtx).copyWith(
+                    color: AppColors.textSecondaryOf(dialogCtx),
+                    height: 1.4,
                   ),
                 ),
-                const SizedBox(height: 6),
+                const SizedBox(height: 18),
+                RichText(
+                  text: TextSpan(
+                    style: AppTextStyles.caption.copyWith(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
+                      color: isDark
+                          ? AppColors.textSecondaryOnDark
+                          : AppColors.textSecondary,
+                    ),
+                    children: const [
+                      TextSpan(text: 'Type '),
+                      TextSpan(
+                        text: 'DELETE',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w800,
+                          color: AppColors.dangerRed,
+                          letterSpacing: 0.8,
+                        ),
+                      ),
+                      TextSpan(text: ' to confirm:'),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 8),
                 TextField(
                   controller: confirmController,
                   autofocus: true,
+                  cursorColor: AppColors.dangerRed,
+                  style: TextStyle(
+                    color: isDark ? Colors.white : const Color(0xFF111111),
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 1.5,
+                    fontSize: 15,
+                  ),
                   onChanged: (_) => setDialogState(() {}),
                   decoration: InputDecoration(
                     hintText: 'DELETE',
+                    hintStyle: TextStyle(
+                      color: isDark
+                          ? const Color(0xFF8E8E93)
+                          : const Color(0xFF636366),
+                      fontWeight: FontWeight.w600,
+                      letterSpacing: 1.5,
+                      fontSize: 15,
+                    ),
                     filled: true,
-                    fillColor: AppColors.cardOf(dialogCtx),
+                    fillColor: isDark
+                        ? const Color(0xFF1C1C1E)
+                        : const Color(0xFFF2F2F7),
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 12,
+                    ),
                     border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(10),
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(
+                        color: isMatch
+                            ? AppColors.dangerRed
+                            : (isDark
+                                ? const Color(0xFF38383A)
+                                : const Color(0xFFD1D1D6)),
+                      ),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(
+                        color: isMatch
+                            ? AppColors.dangerRed
+                            : (isDark
+                                ? const Color(0xFF38383A)
+                                : const Color(0xFFD1D1D6)),
+                        width: isMatch ? 1.5 : 1.0,
+                      ),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(
+                        color: isMatch
+                            ? AppColors.dangerRed
+                            : (isDark
+                                ? Colors.white38
+                                : const Color(0xFF8E8E93)),
+                        width: 1.5,
+                      ),
                     ),
                   ),
                 ),
@@ -393,9 +475,19 @@ class _ProfileScreenState extends State<ProfileScreen>
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(dialogCtx, false),
+                style: TextButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
                 child: Text(
                   'Cancel',
-                  style: TextStyle(color: AppColors.textSecondaryOf(dialogCtx)),
+                  style: TextStyle(
+                    color: AppColors.textSecondaryOf(dialogCtx),
+                    fontWeight: FontWeight.w600,
+                    fontSize: 15,
+                  ),
                 ),
               ),
               ElevatedButton(
@@ -405,14 +497,27 @@ class _ProfileScreenState extends State<ProfileScreen>
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppColors.dangerRed,
                   foregroundColor: Colors.white,
-                  disabledBackgroundColor: AppColors.dangerRed.withValues(
-                    alpha: 0.3,
-                  ),
+                  disabledBackgroundColor: isDark
+                      ? const Color(0xFF2C2C2E)
+                      : const Color(0xFFE5E5EA),
+                  disabledForegroundColor: isDark
+                      ? Colors.white38
+                      : const Color(0xFF8E8E93),
+                  elevation: isMatch ? 1.5 : 0,
+                  shadowColor: AppColors.dangerRed.withValues(alpha: 0.4),
+                  padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12),
                   ),
                 ),
-                child: const Text('Delete Forever'),
+                child: const Text(
+                  'Delete Forever',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 15,
+                    letterSpacing: 0.2,
+                  ),
+                ),
               ),
             ],
           );
@@ -423,9 +528,36 @@ class _ProfileScreenState extends State<ProfileScreen>
     if (confirmed != true || !mounted) return;
 
     try {
+      final stats = context.read<StatsProvider>();
+      final practicePlan = context.read<PracticePlanProvider>();
+      final slideCoach = context.read<SlideCoachProvider>();
+      final gamification = context.read<GamificationProvider>();
+      final sessionResults = context.read<SessionResultsProvider>();
+      final settings = context.read<SettingsProvider>();
+      final user = context.read<UserProvider>();
+
       await NotificationService.instance.cancelPracticeReminders();
-      if (!mounted) return;
-      final success = await context.read<UserProvider>().deleteAccount();
+
+      try {
+        stats.reset();
+      } catch (_) {}
+      try {
+        practicePlan.reset();
+      } catch (_) {}
+      try {
+        await slideCoach.reset();
+      } catch (_) {}
+      try {
+        gamification.reset();
+      } catch (_) {}
+      try {
+        await sessionResults.reset();
+      } catch (_) {}
+      try {
+        await settings.clearAllSettings();
+      } catch (_) {}
+
+      final success = await user.deleteAccount();
       if (mounted) {
         if (success) {
           context.go('/');
@@ -628,7 +760,9 @@ class _ProfileScreenState extends State<ProfileScreen>
                       title: 'Preferences',
                       children: [
                         SettingsTile(
-                          leadingIcon: AppIcons.moon,
+                          leadingIcon: settingsProvider.isDarkMode(context)
+                              ? AppIcons.moon
+                              : AppIcons.sun,
                           title: 'Dark Mode',
                           subtitle: 'Toggle dark or light theme interface',
                           trailingType: SettingsTileTrailing.toggle,

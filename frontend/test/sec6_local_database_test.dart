@@ -158,7 +158,11 @@ void main() {
         expect(streak, 3);
 
         // Assert Trend
-        final trend = await service.getTrend(userId, days: 7);
+        final trend = await service.getTrend(
+          userId,
+          days: 7,
+          asOf: DateTime.parse('2026-10-09T12:00:00Z'),
+        );
         expect(trend.length, 3);
         expect(trend[0].date, '2026-10-07');
         expect(trend[1].date, '2026-10-08');
@@ -224,6 +228,50 @@ void main() {
         final summary = await service.getSummary(userId);
         expect(summary.totalSessions, 0);
         expect(summary.avgConfidence, 0.0);
+      },
+    );
+
+    test(
+      'Account deletion wipes user database and all local records',
+      () async {
+        final service = LocalDatabaseService.instance;
+        const userId = 'user_delete_test';
+        await service.initForUser(userId);
+
+        await service.upsertSessionMetric({
+          'id': 'sess-delete-1',
+          'user_id': userId,
+          'mode': 'interview',
+          'topic_or_question': 'To be deleted session',
+          'overall_score': 88.0,
+          'confidence_score': 85.0,
+          'status': 'analyzed',
+          'created_at': '2026-10-15T10:00:00Z',
+          'local_date': '2026-10-15',
+          'tz_offset_minutes': 0,
+          'updated_at': '2026-10-15T10:00:00Z',
+        });
+        await service.upsertUserAchievement(
+          userId,
+          'first_session',
+          '2026-10-15T10:00:00Z',
+          '2026-10-15T10:00:00Z',
+        );
+
+        final initialSummary = await service.getSummary(userId);
+        expect(initialSummary.totalSessions, 1);
+        final initialAchievements = await service.getUserAchievements(userId);
+        expect(initialAchievements.where((a) => a.isUnlocked).length, 1);
+
+        // Perform complete local database wipe
+        await service.wipeAllLocalDatabases(userId);
+
+        // Re-open and verify database is clean
+        await service.initForUser(userId);
+        final wipedSummary = await service.getSummary(userId);
+        expect(wipedSummary.totalSessions, 0);
+        final wipedAchievements = await service.getUserAchievements(userId);
+        expect(wipedAchievements.where((a) => a.isUnlocked).isEmpty, isTrue);
       },
     );
   });

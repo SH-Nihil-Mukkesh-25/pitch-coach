@@ -1,6 +1,8 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
+import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:record/record.dart';
@@ -120,6 +122,35 @@ class SessionRepository {
       _pendingDeletePaths.remove(path);
       await deleteLocalFile(path);
     }
+  }
+
+  /// Cleans up any cached session audio files on disk and resets internal caches.
+  Future<void> clearAllLocalAudioFiles() async {
+    if (!kIsWeb) {
+      try {
+        final dir = await getApplicationDocumentsDirectory();
+        final dirObj = Directory(dir.path);
+        if (await dirObj.exists()) {
+          final entities = dirObj.listSync();
+          for (final entity in entities) {
+            if (entity is File) {
+              final name = p.basename(entity.path);
+              if (name.startsWith('session_') || name.startsWith('demo_')) {
+                try {
+                  await entity.delete();
+                } catch (_) {}
+              }
+            }
+          }
+        }
+      } catch (e) {
+        debugPrint('[SessionRepository] Notice clearing audio files: $e');
+      }
+    }
+    _audioPathCache.clear();
+    _pendingDeletePaths.clear();
+    _currentAudioPath = null;
+    _currentSessionId = null;
   }
 
   /// Cleans up any audio files that were staged for deletion from previous sessions.

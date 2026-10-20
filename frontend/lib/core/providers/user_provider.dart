@@ -3,10 +3,12 @@ import 'package:dio/dio.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import '../repositories/auth_repository.dart';
 import '../repositories/firebase_auth_repository.dart';
+import '../repositories/session_repository.dart';
 import '../services/api_client.dart';
 import '../services/local_database_service.dart';
 import '../services/notification_service.dart';
 import '../services/sync_service.dart';
+import '../services/upload_queue_service.dart';
 
 enum AuthState { loading, unauthenticated, guest, authenticated, error }
 
@@ -589,9 +591,16 @@ class UserProvider extends ChangeNotifier {
   Future<bool> deleteAccount() async {
     _setLoading(true);
     try {
+      final userId = _user.id;
       if (!_user.isGuest && await _auth.hasStoredTokens) {
         await _auth.deleteAccount();
       }
+      // Purge all local user databases (both user and guest)
+      await LocalDatabaseService.instance.wipeAllLocalDatabases(userId);
+      // Purge offline queue and staged audio files
+      await UploadQueueService.instance.clearQueue();
+      // Purge all local recordings and session audio files
+      await SessionRepository.instance.clearAllLocalAudioFiles();
       await logout();
       return true;
     } catch (e) {

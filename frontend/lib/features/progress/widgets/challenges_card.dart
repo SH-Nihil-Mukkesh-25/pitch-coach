@@ -29,27 +29,34 @@ class ChallengesCard extends StatelessWidget {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: AppColors.primaryPurple.withValues(alpha: 0.12),
-                      borderRadius: BorderRadius.circular(10),
+              Expanded(
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: AppColors.primaryPurple.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: const Icon(
+                        Icons.flag_rounded,
+                        color: AppColors.primaryPurple,
+                        size: 20,
+                      ),
                     ),
-                    child: const Icon(
-                      Icons.flag_rounded,
-                      color: AppColors.primaryPurple,
-                      size: 20,
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        'Weekly Challenges',
+                        style: AppTextStyles.headingMOf(context),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     ),
-                  ),
-                  const SizedBox(width: 10),
-                  Text(
-                    'Weekly Challenges',
-                    style: AppTextStyles.headingMOf(context),
-                  ),
-                ],
+                  ],
+                ),
               ),
+              const SizedBox(width: 8),
               Container(
                 padding: const EdgeInsets.symmetric(
                   horizontal: 10,
@@ -171,8 +178,8 @@ class _ChallengeItemTile extends StatelessWidget {
                   color: challenge.isCompleted
                       ? AppColors.primaryPurple.withValues(alpha: 0.15)
                       : (isDark
-                          ? const Color(0xFF282548)
-                          : const Color(0xFFE8E8F0)),
+                            ? const Color(0xFF282548)
+                            : const Color(0xFFE8E8F0)),
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Icon(
@@ -190,16 +197,16 @@ class _ChallengeItemTile extends StatelessWidget {
                   children: [
                     Text(
                       challenge.title,
-                      style: AppTextStyles.bodyBoldOf(context).copyWith(
-                        fontWeight: FontWeight.w600,
-                      ),
+                      style: AppTextStyles.bodyBoldOf(
+                        context,
+                      ).copyWith(fontWeight: FontWeight.w600),
                     ),
                     const SizedBox(height: 2),
                     Text(
                       challenge.description,
-                      style: AppTextStyles.captionOf(context).copyWith(
-                        color: AppColors.textSecondaryOf(context),
-                      ),
+                      style: AppTextStyles.captionOf(
+                        context,
+                      ).copyWith(color: AppColors.textSecondaryOf(context)),
                     ),
                   ],
                 ),

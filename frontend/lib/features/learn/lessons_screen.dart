@@ -7,14 +7,17 @@ import '../../core/widgets/bottom_nav_bar.dart';
 import '../../core/widgets/theme_toggle_button.dart';
 
 class LessonsScreen extends StatefulWidget {
-  const LessonsScreen({super.key});
+  final String? initialCategory;
+
+  const LessonsScreen({super.key, this.initialCategory});
 
   @override
   State<LessonsScreen> createState() => _LessonsScreenState();
 }
 
 class _LessonsScreenState extends State<LessonsScreen> {
-  String _selectedCategory = 'All';
+  late String _selectedCategory;
+  String _selectedLevel = 'All';
 
   final List<String> _categories = [
     'All',
@@ -23,10 +26,27 @@ class _LessonsScreenState extends State<LessonsScreen> {
     'Speaking',
   ];
 
+  final List<String> _levels = [
+    'All',
+    'Beginner',
+    'Intermediate',
+    'Advanced',
+  ];
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedCategory = widget.initialCategory ?? 'All';
+  }
+
   List<Lesson> get _filteredLessons {
-    if (_selectedCategory == 'All') return LessonCatalog.all;
-    final key = _selectedCategory.toLowerCase();
-    return LessonCatalog.all.where((l) => l.category == key).toList();
+    final cat = _selectedCategory.toLowerCase();
+    final lvl = _selectedLevel.toLowerCase();
+    return LessonCatalog.all.where((l) {
+      final matchCat = cat == 'all' || l.category == cat;
+      final matchLvl = lvl == 'all' || l.level == lvl;
+      return matchCat && matchLvl;
+    }).toList();
   }
 
   @override
@@ -125,25 +145,98 @@ class _LessonsScreenState extends State<LessonsScreen> {
               ),
             ),
 
-            const SizedBox(height: 16),
+            const SizedBox(height: 10),
+
+            // Difficulty Level Filter Chips
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Row(
+                children: _levels.map((lvl) {
+                  final isSelected = _selectedLevel == lvl;
+                  final displayLabel = lvl == 'All' ? 'All Levels' : lvl;
+                  return Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: ChoiceChip(
+                      label: Text(displayLabel),
+                      selected: isSelected,
+                      selectedColor: lvl == 'Beginner'
+                          ? AppColors.accentGreen
+                          : lvl == 'Intermediate'
+                              ? AppColors.accentBlue
+                              : lvl == 'Advanced'
+                                  ? AppColors.primaryPurple
+                                  : AppColors.primaryPurple,
+                      backgroundColor: AppColors.cardOf(context),
+                      labelStyle: AppTextStyles.captionOf(context).copyWith(
+                        color: isSelected
+                            ? Colors.white
+                            : AppColors.textSecondaryOf(context),
+                        fontWeight: isSelected
+                            ? FontWeight.w700
+                            : FontWeight.w500,
+                        fontSize: 11.5,
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                        side: BorderSide(
+                          color: isSelected
+                              ? Colors.transparent
+                              : AppColors.borderOf(context),
+                        ),
+                      ),
+                      onSelected: (selected) {
+                        if (selected) {
+                          setState(() => _selectedLevel = lvl);
+                        }
+                      },
+                    ),
+                  );
+                }).toList(),
+              ),
+            ),
+
+            const SizedBox(height: 14),
 
             // Lesson List
             Expanded(
-              child: ListView.separated(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 20,
-                  vertical: 4,
-                ),
-                itemCount: _filteredLessons.length,
-                separatorBuilder: (_, _) => const SizedBox(height: 12),
-                itemBuilder: (context, index) {
-                  final lesson = _filteredLessons[index];
-                  return _LessonCard(
-                    lesson: lesson,
-                    onTap: () => context.push('/lessons/detail', extra: lesson),
-                  );
-                },
-              ),
+              child: _filteredLessons.isEmpty
+                  ? Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            Icons.filter_list_off_rounded,
+                            size: 40,
+                            color: AppColors.textSecondaryOf(context),
+                          ),
+                          const SizedBox(height: 12),
+                          Text(
+                            'No lessons match this filter',
+                            style: AppTextStyles.bodyMOf(context).copyWith(
+                              color: AppColors.textSecondaryOf(context),
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    )
+                  : ListView.separated(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 20,
+                        vertical: 4,
+                      ),
+                      itemCount: _filteredLessons.length,
+                      separatorBuilder: (_, _) => const SizedBox(height: 12),
+                      itemBuilder: (context, index) {
+                        final lesson = _filteredLessons[index];
+                        return _LessonCard(
+                          lesson: lesson,
+                          onTap: () =>
+                              context.push('/lessons/detail', extra: lesson),
+                        );
+                      },
+                    ),
             ),
           ],
         ),
@@ -187,6 +280,19 @@ class _LessonCard extends StatelessWidget {
         return AppColors.primaryPurple;
       case 'presentation':
         return AppColors.accentBlue;
+      default:
+        return AppColors.accentGreen;
+    }
+  }
+
+  Color get _levelColor {
+    switch (lesson.level) {
+      case 'beginner':
+        return AppColors.accentGreen;
+      case 'intermediate':
+        return AppColors.accentBlue;
+      case 'advanced':
+        return AppColors.primaryPurple;
       default:
         return AppColors.accentGreen;
     }
@@ -251,9 +357,32 @@ class _LessonCard extends StatelessWidget {
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                   ),
-                  const SizedBox(height: 6),
+                  const SizedBox(height: 8),
                   Row(
                     children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 7,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: _levelColor.withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(
+                            color: _levelColor.withValues(alpha: 0.28),
+                            width: 0.8,
+                          ),
+                        ),
+                        child: Text(
+                          lesson.levelLabel,
+                          style: AppTextStyles.caption.copyWith(
+                            color: _levelColor,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 10,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
                       Icon(
                         Icons.play_circle_outline_rounded,
                         size: 14,

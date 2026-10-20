@@ -276,4 +276,21 @@ class SettingsCubit extends Cubit<SettingsState> {
       );
     }
   }
+
+  /// Completely wipes all settings from SharedPreferences and resets state to default.
+  Future<void> clearAllSettings() async {
+    _prefs ??= await SharedPreferences.getInstance();
+    await _prefs!.remove(keyThemeMode);
+    await _prefs!.remove(keyLocale);
+    await _prefs!.remove(keyDailyReminder);
+    await _prefs!.remove(keySlideDeckReady);
+    await _prefs!.remove(keyWeeklySummary);
+    await _prefs!.remove(keyTipsLessons);
+    await _prefs!.remove(keyReminderHour);
+    await _prefs!.remove(keyReminderMinute);
+    await _prefs!.remove(keyReminderDays);
+    await _prefs!.remove(keyWeeklyGoal);
+
+    emit(const SettingsState());
+  }
 }

@@ -494,4 +494,42 @@ class SettingsProvider extends ChangeNotifier {
       return false;
     }
   }
+
+  /// Completely wipes all settings stored in SharedPreferences and resets state to defaults.
+  Future<void> clearAllSettings() async {
+    _prefs ??= await SharedPreferences.getInstance();
+    await _prefs!.remove(_keyThemeMode);
+    await _prefs!.remove(_keyLocale);
+    await _prefs!.remove(_keyDailyReminder);
+    await _prefs!.remove(_keySlideDeckReady);
+    await _prefs!.remove(_keyWeeklySummary);
+    await _prefs!.remove(_keyTipsLessons);
+    await _prefs!.remove(_keyReminderHour);
+    await _prefs!.remove(_keyReminderMinute);
+    await _prefs!.remove(_keyReminderDays);
+    await _prefs!.remove(_keyWeeklyGoal);
+    await _prefs!.remove(_keyLastReviewPrompt);
+    await _prefs!.remove(_keyAmbientLiveCues);
+    await _prefs!.remove(_keyInterviewTargetDate);
+    await _prefs!.remove(_keyQuietHoursEnabled);
+    await _prefs!.remove(_keyQuietHoursStart);
+    await _prefs!.remove(_keyQuietHoursEnd);
+
+    _themeMode = ThemeMode.system;
+    _locale = 'en';
+    _dailyReminder = true;
+    _slideDeckReadyAlerts = true;
+    _weeklyProgressSummary = true;
+    _tipsAndLessons = true;
+    _ambientLiveCues = true;
+    _reminderTime = const TimeOfDay(hour: 9, minute: 0);
+    _reminderDays = [1, 2, 3, 4, 5];
+    _weeklyGoal = 5;
+    _interviewTargetDate = null;
+    _quietHoursEnabled = true;
+    _quietHoursStart = 22;
+    _quietHoursEnd = 8;
+    _syncError = null;
+    notifyListeners();
+  }
 }

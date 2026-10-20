@@ -9,6 +9,7 @@ import '../../features/history/history_screen.dart';
 import '../../features/home/home_screen.dart';
 import '../../features/interview/interview_practice_screen.dart';
 import '../../features/learn/lesson_detail_screen.dart';
+import '../../features/learn/lesson_practice_screen.dart';
 import '../../features/learn/lessons_screen.dart';
 import '../../features/onboarding/onboarding_screen.dart';
 import '../../features/profile/profile_screen.dart';
@@ -43,6 +44,7 @@ abstract class AppRouter {
   static const String demo = '/demo';
   static const String lessons = '/lessons';
   static const String lessonDetail = '/lessons/detail';
+  static const String lessonPractice = '/lessons/practice';
 
   // ── Slide Coach ───────────────────────────────────────────────────────────
   static const String slideCoachUpload = '/slide-coach';
@@ -203,7 +205,9 @@ abstract class AppRouter {
         pageBuilder: (context, state) => _buildPage(
           context: context,
           state: state,
-          child: const LessonsScreen(),
+          child: LessonsScreen(
+            initialCategory: state.extra as String?,
+          ),
         ),
       ),
       GoRoute(
@@ -246,6 +250,17 @@ abstract class AppRouter {
             context: context,
             state: state,
             child: LessonDetailScreen(lesson: lesson),
+          );
+        },
+      ),
+      GoRoute(
+        path: lessonPractice,
+        pageBuilder: (context, state) {
+          final lesson = state.extra as Lesson;
+          return _buildPage(
+            context: context,
+            state: state,
+            child: LessonPracticeScreen(lesson: lesson),
           );
         },
       ),

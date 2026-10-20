@@ -210,33 +210,43 @@ class __InterviewPracticeContentState extends State<_InterviewPracticeContent>
                   _buildTopAppBar(context, ctrl),
                   _buildLiveCaptionBanner(ctrl),
 
-                  const SizedBox(height: 14),
-
-                  // 2. Mode selection tabs (only visible when idle)
-                  if (!ctrl.isRecording && !ctrl.isUploading) ...[
-                    _buildModeTabs(ctrl),
-                    const SizedBox(height: 10),
-                    _buildTemplateSelector(ctrl),
-                  ],
-
-                  const SizedBox(height: 14),
-
-                  // 3. Question Prompt Card (with real Question Bank navigation)
-                  _buildQuestionCard(ctrl),
-
-                  const SizedBox(height: 14),
-
-                  // 4. Central Stage: Live Waveform, Instructions, or Error Recovery
+                  // 2. Middle Scrollable Area: Mode tabs, Templates, Question Card, Central Stage
                   Expanded(
                     child: SingleChildScrollView(
                       physics: const BouncingScrollPhysics(),
-                      child: _buildCentralStage(context, ctrl),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const SizedBox(height: 12),
+
+                          // Mode selection tabs (only visible when idle)
+                          if (!ctrl.isRecording && !ctrl.isUploading) ...[
+                            _buildModeTabs(ctrl),
+                            const SizedBox(height: 10),
+                            _buildTemplateSelector(ctrl),
+                            const SizedBox(height: 12),
+                          ],
+
+                          // Question Prompt Card (with real Question Bank navigation & follow-up)
+                          _buildQuestionCard(ctrl),
+
+                          if (!ctrl.isRecording &&
+                              !ctrl.isUploading &&
+                              ctrl.currentFollowUp == null)
+                            const SizedBox(height: 12),
+
+                          // Central Stage: Live Waveform, Instructions, or Error Recovery
+                          _buildCentralStage(context, ctrl),
+
+                          const SizedBox(height: 12),
+                        ],
+                      ),
                     ),
                   ),
 
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 8),
 
-                  // 5. Bottom Controls (Record, Stop, Cancel, Retry)
+                  // 3. Pinned Bottom Controls (Record, Stop, Cancel, Retry, Finish)
                   _buildBottomControls(context, ctrl),
                 ],
               ),
@@ -996,7 +1006,10 @@ class __InterviewPracticeContentState extends State<_InterviewPracticeContent>
       return _buildActiveRecordingCard(ctrl);
     }
 
-    // Idle: Preparation State
+    // Idle: Preparation State (hidden when actively responding to an AI follow-up)
+    if (ctrl.currentFollowUp != null) {
+      return const SizedBox.shrink();
+    }
     return _buildIdlePreparationCard(ctrl);
   }
 

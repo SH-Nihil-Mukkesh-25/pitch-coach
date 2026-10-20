@@ -1,10 +1,14 @@
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
+import '../../core/models/practice_drill.dart';
 import '../../core/models/stats_models.dart';
 import '../../core/providers/gamification_provider.dart';
+import '../../core/providers/practice_plan_provider.dart';
 import '../../core/providers/stats_provider.dart';
 import '../../core/providers/user_provider.dart';
+import '../../core/repositories/practice_plan_repository.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_text_styles.dart';
 import '../../core/widgets/app_icon.dart';
@@ -30,12 +34,17 @@ class _ProgressScreenState extends State<ProgressScreen>
   @override
   void initState() {
     super.initState();
-    // Load all stats data when screen opens if not already ready
+    // Load all stats and practice plan data when screen opens
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final stats = context.read<StatsProvider>();
       final gamification = context.read<GamificationProvider>();
+      final practicePlan = context.read<PracticePlanProvider>();
+      final isGuest = context.read<UserProvider>().isGuest;
+
       gamification.loadGamificationData();
-      if (context.read<UserProvider>().isGuest) {
+      practicePlan.loadPlan(isGuest: isGuest);
+
+      if (isGuest) {
         stats.loadDemo();
       } else {
         if (stats.state != StatsLoadState.ready) {
@@ -60,7 +69,12 @@ class _ProgressScreenState extends State<ProgressScreen>
           onRefresh: () async {
             final gamification = context.read<GamificationProvider>();
             gamification.loadGamificationData(silent: true);
-            if (context.read<UserProvider>().isGuest) {
+            final isGuest = context.read<UserProvider>().isGuest;
+            context.read<PracticePlanProvider>().loadPlan(
+              forceRefresh: true,
+              isGuest: isGuest,
+            );
+            if (isGuest) {
               statsProvider.loadDemo();
             } else {
               final userId = context.read<UserProvider>().user.id;
@@ -140,6 +154,11 @@ class _ProgressScreenState extends State<ProgressScreen>
 
                 // 4. Skill Breakdown Card — real skills data
                 _buildSkillBreakdownCard(statsProvider, isLoading),
+
+                const SizedBox(height: 20),
+
+                // Targeted Drills & Skill Evaluations (Feature 6 stored in Progress)
+                _buildDrillEvaluationsCard(context),
 
                 const SizedBox(height: 20),
 
@@ -885,6 +904,379 @@ class _ProgressScreenState extends State<ProgressScreen>
                 ? AppColors.successGreen
                 : AppColors.dangerRed,
             size: 36,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDrillEvaluationsCard(BuildContext context) {
+    final planProvider = context.watch<PracticePlanProvider>();
+    final plan =
+        planProvider.plan ?? PracticePlanRepository.defaultFallbackPlan;
+    final diagnosis = plan.diagnosis;
+    final completedDrills = planProvider.completedDrills;
+    final pendingDrills = planProvider.pendingDrills;
+    final totalCount = plan.drills.length;
+
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: AppColors.cardOf(context),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.borderOf(context)),
+        boxShadow: AppColors.softShadowOf(context),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Header Row
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: AppColors.primaryPurple.withValues(alpha: 0.12),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.psychology_rounded,
+                  color: AppColors.primaryPurple,
+                  size: 20,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Targeted Drills & Evaluations',
+                      style: AppTextStyles.bodySmallBold.copyWith(
+                        color: AppColors.textPrimaryOf(context),
+                        fontSize: 15,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    Text(
+                      'AI speech evaluation & completed drills',
+                      style: AppTextStyles.caption.copyWith(
+                        color: AppColors.textSecondaryOf(context),
+                        fontSize: 11,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+                decoration: BoxDecoration(
+                  color: completedDrills.isNotEmpty
+                      ? AppColors.accentGreen.withValues(alpha: 0.15)
+                      : AppColors.surfaceSubtleOf(context),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                    color: completedDrills.isNotEmpty
+                        ? AppColors.accentGreen.withValues(alpha: 0.4)
+                        : AppColors.borderOf(context),
+                  ),
+                ),
+                child: Text(
+                  '${completedDrills.length}/$totalCount Completed',
+                  style: AppTextStyles.caption.copyWith(
+                    color: completedDrills.isNotEmpty
+                        ? AppColors.accentGreen
+                        : AppColors.textSecondaryOf(context),
+                    fontWeight: FontWeight.w700,
+                    fontSize: 11,
+                  ),
+                ),
+              ),
+            ],
+          ),
+
+          const SizedBox(height: 14),
+
+          // Diagnostic Evaluation Banner
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: AppColors.primaryPurple.withValues(alpha: 0.05),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: AppColors.primaryPurple.withValues(alpha: 0.15),
+              ),
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Icon(
+                  Icons.auto_awesome_rounded,
+                  color: AppColors.primaryPurple,
+                  size: 18,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        diagnosis.diagnosticsSummary,
+                        style: AppTextStyles.bodyM.copyWith(
+                          color: AppColors.textPrimaryOf(context),
+                          fontSize: 12.5,
+                          height: 1.35,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 4,
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 6,
+                              vertical: 2,
+                            ),
+                            decoration: BoxDecoration(
+                              color: AppColors.primaryPurple.withValues(
+                                alpha: 0.12,
+                              ),
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Text(
+                              'FOCUS: ${diagnosis.weakestMetric.toUpperCase()}',
+                              style: AppTextStyles.caption.copyWith(
+                                color: AppColors.primaryPurple,
+                                fontWeight: FontWeight.w700,
+                                fontSize: 9.5,
+                              ),
+                            ),
+                          ),
+                          if (diagnosis.scoreTrend != 'insufficient_data')
+                            Text(
+                              'Trend: ${diagnosis.scoreTrend.toUpperCase()} • ${diagnosis.sessionsAnalyzed} sessions',
+                              style: AppTextStyles.caption.copyWith(
+                                color: AppColors.textSecondaryOf(context),
+                                fontSize: 11,
+                              ),
+                            ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          const SizedBox(height: 14),
+
+          // Completed Drills (Stored in Progress)
+          if (completedDrills.isNotEmpty) ...[
+            Text(
+              'Completed Drill Evaluations',
+              style: AppTextStyles.caption.copyWith(
+                color: AppColors.textSecondaryOf(context),
+                fontWeight: FontWeight.w700,
+                fontSize: 11,
+              ),
+            ),
+            const SizedBox(height: 8),
+            ...completedDrills.map(
+              (drill) => _buildCompletedDrillTile(context, drill),
+            ),
+          ] else ...[
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 16),
+              decoration: BoxDecoration(
+                color: AppColors.surfaceSubtleOf(context),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: AppColors.borderOf(context)),
+              ),
+              child: Column(
+                children: [
+                  Icon(
+                    Icons.assignment_turned_in_outlined,
+                    size: 32,
+                    color: AppColors.textSecondaryOf(
+                      context,
+                    ).withValues(alpha: 0.6),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'No Completed Drills Stored Yet',
+                    style: AppTextStyles.bodySmallBold.copyWith(
+                      color: AppColors.textPrimaryOf(context),
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Targeted drills evaluated and completed from your Home screen will be recorded here.',
+                    textAlign: TextAlign.center,
+                    style: AppTextStyles.caption.copyWith(
+                      color: AppColors.textSecondaryOf(context),
+                      height: 1.3,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+
+          if (pendingDrills.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Expanded(
+                  child: Text(
+                    '${pendingDrills.length} drill(s) active on Home',
+                    style: AppTextStyles.caption.copyWith(
+                      color: AppColors.textSecondaryOf(context),
+                      fontStyle: FontStyle.italic,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                GestureDetector(
+                  onTap: () => context.go('/home'),
+                  child: Text(
+                    'Go to Drills >',
+                    style: AppTextStyles.caption.copyWith(
+                      color: AppColors.primaryPurple,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ] else if (completedDrills.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              decoration: BoxDecoration(
+                color: AppColors.accentGreen.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                  color: AppColors.accentGreen.withValues(alpha: 0.3),
+                ),
+              ),
+              child: Row(
+                children: [
+                  const Icon(
+                    Icons.check_circle_rounded,
+                    size: 16,
+                    color: AppColors.accentGreen,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'All targeted drills completed and evaluated! Great job.',
+                      style: AppTextStyles.caption.copyWith(
+                        color: AppColors.accentGreen,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCompletedDrillTile(BuildContext context, PracticeDrill drill) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppColors.surfaceSubtleOf(context),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.accentGreen.withValues(alpha: 0.3)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(4),
+            decoration: BoxDecoration(
+              color: AppColors.accentGreen.withValues(alpha: 0.15),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(
+              Icons.check_circle_rounded,
+              size: 20,
+              color: AppColors.accentGreen,
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Expanded(
+                      child: Text(
+                        drill.title,
+                        style: AppTextStyles.bodySmallBold.copyWith(
+                          color: AppColors.textPrimaryOf(context),
+                        ),
+                      ),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 6,
+                        vertical: 2,
+                      ),
+                      decoration: BoxDecoration(
+                        color: AppColors.accentGreen.withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Text(
+                        'EVALUATED',
+                        style: AppTextStyles.caption.copyWith(
+                          color: AppColors.accentGreen,
+                          fontWeight: FontWeight.w800,
+                          fontSize: 9.5,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  drill.description,
+                  style: AppTextStyles.caption.copyWith(
+                    color: AppColors.textSecondaryOf(context),
+                    height: 1.25,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Coach Note: ${drill.reason}',
+                  style: AppTextStyles.caption.copyWith(
+                    color: AppColors.primaryPurple,
+                    fontStyle: FontStyle.italic,
+                    fontSize: 10.5,
+                  ),
+                ),
+              ],
+            ),
           ),
         ],
       ),

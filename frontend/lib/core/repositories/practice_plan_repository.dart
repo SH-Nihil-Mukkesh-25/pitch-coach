@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/foundation.dart';
 import '../models/practice_drill.dart';
 import '../services/api_client.dart';
@@ -53,9 +54,19 @@ class PracticePlanRepository {
     isDefaultPlan: true,
   );
 
+  final ValueNotifier<PracticePlan?> planNotifier =
+      ValueNotifier<PracticePlan?>(null);
+
+  /// Resets in-memory cached plan (useful for tests and user switches).
+  void resetPlan() {
+    _cachedPlan = null;
+    planNotifier.value = null;
+  }
+
   /// Fetches the latest practice plan from backend or returns cache / fallback.
   Future<PracticePlan> getPracticePlan({bool forceRefresh = false}) async {
     if (!forceRefresh && _cachedPlan != null) {
+      planNotifier.value = _cachedPlan;
       return _cachedPlan!;
     }
 
@@ -63,6 +74,7 @@ class PracticePlanRepository {
       final response = await ApiClient.instance.get('/practice-plan');
       if (response != null && response is Map<String, dynamic>) {
         _cachedPlan = PracticePlan.fromJson(response);
+        planNotifier.value = _cachedPlan;
         return _cachedPlan!;
       }
     } catch (e) {
@@ -70,44 +82,52 @@ class PracticePlanRepository {
     }
 
     _cachedPlan ??= defaultFallbackPlan;
+    planNotifier.value = _cachedPlan;
     return _cachedPlan!;
   }
 
   /// Marks a drill as completed on backend and updates in-memory cache.
-  Future<bool> completeDrill(String drillId, {String? sessionId}) async {
-    try {
-      final payload = <String, dynamic>{'drill_id': drillId};
-      if (sessionId != null) {
-        payload['session_id'] = sessionId;
-      }
-      await ApiClient.instance.post(
-        '/practice-plan/complete',
-        data: payload,
-      );
-
-      if (_cachedPlan != null) {
-        final updatedDrills = _cachedPlan!.drills.map((drill) {
-          if (drill.id == drillId) {
-            return drill.copyWith(
-              isCompleted: true,
-              completedAt: DateTime.now(),
-            );
-          }
-          return drill;
-        }).toList();
-
-        _cachedPlan = PracticePlan(
-          diagnosis: _cachedPlan!.diagnosis,
-          drills: updatedDrills,
-          generatedAt: _cachedPlan!.generatedAt,
-          isDefaultPlan: _cachedPlan!.isDefaultPlan,
+  Future<bool> completeDrill(
+    String drillId, {
+    String? sessionId,
+    bool syncToBackend = true,
+  }) async {
+    // 1. Optimistically update local cache and notify listeners immediately
+    _cachedPlan ??= defaultFallbackPlan;
+    final updatedDrills = _cachedPlan!.drills.map((drill) {
+      if (drill.id == drillId) {
+        return drill.copyWith(
+          isCompleted: true,
+          completedAt: DateTime.now(),
         );
       }
-      return true;
-    } catch (e) {
-      debugPrint('[PracticePlanRepository] completeDrill error: $e');
-      return false;
+      return drill;
+    }).toList();
+
+    _cachedPlan = PracticePlan(
+      diagnosis: _cachedPlan!.diagnosis,
+      drills: updatedDrills,
+      generatedAt: _cachedPlan!.generatedAt,
+      isDefaultPlan: _cachedPlan!.isDefaultPlan,
+    );
+    planNotifier.value = _cachedPlan;
+
+    // 2. Persist to backend if requested
+    if (syncToBackend) {
+      try {
+        final payload = <String, dynamic>{'drill_id': drillId};
+        if (sessionId != null) {
+          payload['session_id'] = sessionId;
+        }
+        await ApiClient.instance.post(
+          '/practice-plan/complete',
+          data: payload,
+        );
+      } catch (e) {
+        debugPrint('[PracticePlanRepository] completeDrill background sync notice: $e');
+      }
     }
+    return true;
   }
 
   /// Checks if a session result satisfies any active drills and marks them complete.

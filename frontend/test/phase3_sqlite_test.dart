@@ -150,7 +150,11 @@ void main() {
         ); // from 4 to 2 => (4 - 2)/4 = 50%
 
         // Test Trend
-        final trend = await service.getTrend(testId, days: 7);
+        final trend = await service.getTrend(
+          testId,
+          days: 7,
+          asOf: DateTime.parse('2026-10-09T12:00:00Z'),
+        );
         expect(trend.length, 2);
         expect(trend[0].date, '2026-10-08');
         expect(trend[1].date, '2026-10-09');

@@ -191,4 +191,16 @@ class StatsProvider extends ChangeNotifier {
     _lastLoaded = DateTime.now();
     notifyListeners();
   }
+
+  /// Clears in-memory stats, trend, skills, and achievements.
+  void reset() {
+    _summary = StatsSummary.empty;
+    _trend = [];
+    _skills = SkillBreakdown.empty;
+    _achievements = [];
+    _state = StatsLoadState.idle;
+    _error = null;
+    _lastLoaded = null;
+    notifyListeners();
+  }
 }

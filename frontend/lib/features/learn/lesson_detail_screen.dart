@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-import 'package:video_player/video_player.dart';
+import 'package:youtube_player_iframe/youtube_player_iframe.dart';
 import '../../core/models/lesson_model.dart';
+import '../../core/router/app_router.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_text_styles.dart';
 import '../../core/widgets/gradient_button.dart';
@@ -17,84 +18,60 @@ class LessonDetailScreen extends StatefulWidget {
 }
 
 class _LessonDetailScreenState extends State<LessonDetailScreen> {
-  VideoPlayerController? _controller;
-  bool _isInitialized = false;
-  bool _hasError = false;
-  bool _isPlaying = false;
+  late final YoutubePlayerController _ytController;
 
   @override
   void initState() {
     super.initState();
-    _initVideo();
-  }
-
-  Future<void> _initVideo() async {
-    _controller?.removeListener(_onVideoUpdate);
-    _controller?.dispose();
-    _controller = null;
-
-    final candidateUrls = [
-      widget.lesson.videoUrl,
-      'https://vjs.zencdn.net/v/oceans.mp4',
-    ];
-
-    for (final url in candidateUrls) {
-      if (!mounted) return;
-      try {
-        final controller = VideoPlayerController.networkUrl(Uri.parse(url));
-        await controller.initialize();
-        if (!mounted) {
-          controller.dispose();
-          return;
-        }
-        _controller = controller;
-        controller.addListener(_onVideoUpdate);
-        setState(() {
-          _isInitialized = true;
-          _hasError = false;
-        });
-        return;
-      } catch (e) {
-        debugPrint('Video init failed for $url: $e');
-      }
-    }
-
-    if (mounted) setState(() => _hasError = true);
-  }
-
-  void _onVideoUpdate() {
-    final ctrl = _controller;
-    if (mounted && ctrl != null) {
-      final playing = ctrl.value.isPlaying;
-      if (playing != _isPlaying) {
-        setState(() => _isPlaying = playing);
-      }
-    }
-  }
-
-  void _togglePlay() {
-    final ctrl = _controller;
-    if (ctrl == null || !_isInitialized) return;
-    if (ctrl.value.isPlaying) {
-      ctrl.pause();
-    } else {
-      ctrl.play();
-    }
-    setState(() => _isPlaying = ctrl.value.isPlaying);
-  }
-
-  String _formatDuration(Duration d) {
-    final m = d.inMinutes.remainder(60).toString().padLeft(2, '0');
-    final s = d.inSeconds.remainder(60).toString().padLeft(2, '0');
-    return '$m:$s';
+    _ytController = YoutubePlayerController.fromVideoId(
+      videoId: widget.lesson.youtubeVideoId,
+      autoPlay: true,
+      params: const YoutubePlayerParams(
+        showControls: true,
+        showFullscreenButton: true,
+        mute: false,
+        showVideoAnnotations: false,
+        loop: false,
+        enableCaption: true,
+        playsInline: true,
+      ),
+    );
   }
 
   @override
   void dispose() {
-    _controller?.removeListener(_onVideoUpdate);
-    _controller?.dispose();
+    _ytController.close();
     super.dispose();
   }
+
+
+
+  Color get _categoryColor {
+    switch (widget.lesson.category) {
+      case 'interview':
+        return AppColors.primaryPurple;
+      case 'presentation':
+        return AppColors.accentBlue;
+      default:
+        return AppColors.accentGreen;
+    }
+  }
+
+  Color get _levelColor {
+    switch (widget.lesson.level) {
+      case 'beginner':
+        return AppColors.accentGreen;
+      case 'intermediate':
+        return AppColors.accentBlue;
+      case 'advanced':
+        return AppColors.primaryPurple;
+      default:
+        return AppColors.accentGreen;
+    }
+  }
+
+  String _capitalize(String s) =>
+      s.isEmpty ? s : s[0].toUpperCase() + s.substring(1);
 
   @override
   Widget build(BuildContext context) {
@@ -148,7 +125,7 @@ class _LessonDetailScreenState extends State<LessonDetailScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // ── VIDEO PLAYER ──────────────────────────────────────
+                    // ── DEDICATED YOUTUBE VIDEO PLAYER ───────────────────
                     _buildVideoPlayer(),
 
                     const SizedBox(height: 20),
@@ -161,9 +138,9 @@ class _LessonDetailScreenState extends State<LessonDetailScreen> {
                       ).copyWith(fontSize: 22),
                     ),
 
-                    const SizedBox(height: 4),
+                    const SizedBox(height: 8),
 
-                    // Category + Duration row
+                    // Category + Level + Duration row
                     Row(
                       children: [
                         Container(
@@ -172,16 +149,37 @@ class _LessonDetailScreenState extends State<LessonDetailScreen> {
                             vertical: 4,
                           ),
                           decoration: BoxDecoration(
-                            color: AppColors.primaryPurple.withValues(
-                              alpha: 0.1,
-                            ),
+                            color: _categoryColor.withValues(alpha: 0.1),
                             borderRadius: BorderRadius.circular(8),
                           ),
                           child: Text(
                             _capitalize(widget.lesson.category),
                             style: AppTextStyles.caption.copyWith(
-                              color: AppColors.primaryPurple,
+                              color: _categoryColor,
                               fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 3,
+                          ),
+                          decoration: BoxDecoration(
+                            color: _levelColor.withValues(alpha: 0.12),
+                            borderRadius: BorderRadius.circular(7),
+                            border: Border.all(
+                              color: _levelColor.withValues(alpha: 0.28),
+                              width: 0.8,
+                            ),
+                          ),
+                          child: Text(
+                            widget.lesson.levelLabel,
+                            style: AppTextStyles.caption.copyWith(
+                              color: _levelColor,
+                              fontWeight: FontWeight.w700,
+                              fontSize: 11,
                             ),
                           ),
                         ),
@@ -280,7 +278,10 @@ class _LessonDetailScreenState extends State<LessonDetailScreen> {
                     GradientButton(
                       text: 'Practice This Skill',
                       icon: Icons.mic_rounded,
-                      onPressed: () => context.push('/interview'),
+                      onPressed: () => context.push(
+                        AppRouter.lessonPractice,
+                        extra: widget.lesson,
+                      ),
                     ),
 
                     const SizedBox(height: 24),
@@ -297,7 +298,6 @@ class _LessonDetailScreenState extends State<LessonDetailScreen> {
   Widget _buildVideoPlayer() {
     return Container(
       width: double.infinity,
-      height: 210,
       decoration: BoxDecoration(
         color: Colors.black,
         borderRadius: BorderRadius.circular(16),
@@ -310,180 +310,45 @@ class _LessonDetailScreenState extends State<LessonDetailScreen> {
         ],
       ),
       clipBehavior: Clip.antiAlias,
-      child: Stack(
-        alignment: Alignment.center,
-        children: [
-          // Video or placeholder
-          if (_isInitialized && _controller != null)
-            Positioned.fill(
-              child: Center(
-                child: AspectRatio(
-                  aspectRatio: _controller!.value.aspectRatio > 0
-                      ? _controller!.value.aspectRatio
-                      : (16 / 9),
-                  child: VideoPlayer(_controller!),
-                ),
-              ),
-            )
-          else if (_hasError)
-            _buildVideoError()
-          else
-            const CircularProgressIndicator(
-              valueColor: AlwaysStoppedAnimation<Color>(
-                AppColors.primaryPurple,
-              ),
-            ),
-
-          // Play/Pause overlay
-          if (_isInitialized)
-            Positioned.fill(
-              child: GestureDetector(
-                onTap: _togglePlay,
-                behavior: HitTestBehavior.translucent,
-                child: Center(
-                  child: AnimatedOpacity(
-                    opacity: _isPlaying ? 0.0 : 1.0,
-                    duration: const Duration(milliseconds: 200),
-                    child: Container(
-                      width: 56,
-                      height: 56,
-                      decoration: BoxDecoration(
-                        color: Colors.black.withValues(alpha: 0.6),
-                        shape: BoxShape.circle,
-                      ),
-                      child: const Icon(
-                        Icons.play_arrow_rounded,
-                        color: Colors.white,
-                        size: 32,
-                      ),
+      child: YoutubePlayer(
+        controller: _ytController,
+        aspectRatio: 16 / 9,
+        backgroundColor: Colors.black,
+        thumbnailFormat: ThumbnailFormat.jpeg,
+        thumbnailQuality: ThumbnailQuality.high,
+        controlsBuilder: (context, isFullscreen) {
+          return YoutubeValueBuilder(
+            controller: _ytController,
+            builder: (context, value) {
+              if (value.playerState == PlayerState.playing) {
+                return const SizedBox.shrink();
+              }
+              return GestureDetector(
+                onTap: () => _ytController.playVideo(),
+                behavior: HitTestBehavior.opaque,
+                child: Container(
+                  color: Colors.transparent,
+                  alignment: Alignment.center,
+                  child: Container(
+                    width: 58,
+                    height: 58,
+                    decoration: BoxDecoration(
+                      color: Colors.black.withValues(alpha: 0.65),
+                      shape: BoxShape.circle,
+                      border: Border.all(color: Colors.white38, width: 1.5),
+                    ),
+                    child: const Icon(
+                      Icons.play_arrow_rounded,
+                      color: Colors.white,
+                      size: 38,
                     ),
                   ),
                 ),
-              ),
-            ),
-
-          // Bottom progress + controls bar
-          if (_isInitialized)
-            Positioned(
-              bottom: 0,
-              left: 0,
-              right: 0,
-              child: _buildVideoControls(),
-            ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildVideoControls() {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [Colors.transparent, Colors.black.withValues(alpha: 0.7)],
-        ),
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          // Progress slider
-          ValueListenableBuilder<VideoPlayerValue>(
-            valueListenable: _controller!,
-            builder: (context, value, child) {
-              final position = value.position;
-              final duration = value.duration;
-              final progress = duration.inMilliseconds > 0
-                  ? position.inMilliseconds / duration.inMilliseconds
-                  : 0.0;
-
-              return Column(
-                children: [
-                  SliderTheme(
-                    data: SliderTheme.of(context).copyWith(
-                      trackHeight: 2.5,
-                      thumbShape: const RoundSliderThumbShape(
-                        enabledThumbRadius: 6,
-                      ),
-                      activeTrackColor: AppColors.primaryPurple,
-                      inactiveTrackColor: Colors.white.withValues(alpha: 0.3),
-                      thumbColor: Colors.white,
-                      overlayShape: SliderComponentShape.noOverlay,
-                    ),
-                    child: Slider(
-                      value: progress.clamp(0.0, 1.0),
-                      onChanged: (val) {
-                        final seekTo = Duration(
-                          milliseconds: (val * duration.inMilliseconds).toInt(),
-                        );
-                        _controller?.seekTo(seekTo);
-                      },
-                    ),
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 4),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        GestureDetector(
-                          onTap: _togglePlay,
-                          child: Icon(
-                            _isPlaying
-                                ? Icons.pause_rounded
-                                : Icons.play_arrow_rounded,
-                            color: Colors.white,
-                            size: 22,
-                          ),
-                        ),
-                        Text(
-                          '${_formatDuration(position)} / ${_formatDuration(duration)}',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 11,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
               );
             },
-          ),
-        ],
+          );
+        },
       ),
     );
   }
-
-  Widget _buildVideoError() {
-    return Column(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        const Icon(Icons.wifi_off_rounded, color: Colors.white54, size: 40),
-        const SizedBox(height: 8),
-        const Text(
-          'Could not load video',
-          style: TextStyle(color: Colors.white60, fontSize: 13),
-        ),
-        const SizedBox(height: 8),
-        TextButton(
-          onPressed: () {
-            setState(() {
-              _isInitialized = false;
-              _hasError = false;
-            });
-            _initVideo();
-          },
-          child: const Text(
-            'Retry',
-            style: TextStyle(color: AppColors.primaryPurple),
-          ),
-        ),
-      ],
-    );
-  }
-
-  String _capitalize(String s) =>
-      s.isEmpty ? s : s[0].toUpperCase() + s.substring(1);
 }

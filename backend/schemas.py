@@ -215,6 +215,11 @@ class SessionResult(BaseModel):
     energy_curve: Optional[List[float]] = None
     pitch_variation_score: Optional[float] = None
     volume_consistency_score: Optional[float] = None
+    no_speech: Optional[bool] = None
+    active_wpm: Optional[float] = None
+    repetitions_count: Optional[int] = None
+    rhetorical_pause_count: Optional[int] = None
+    disfluent_pause_count: Optional[int] = None
 
     model_config = {"from_attributes": True}
 

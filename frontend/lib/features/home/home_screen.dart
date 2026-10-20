@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
+import '../../core/models/lesson_model.dart';
 import '../../core/models/practice_drill.dart';
 import '../../core/models/practice_mode.dart';
 import '../../core/models/session_result.dart';
@@ -9,14 +10,12 @@ import '../../core/providers/session_results_provider.dart';
 import '../../core/providers/slide_coach_provider.dart';
 import '../../core/providers/stats_provider.dart';
 import '../../core/providers/user_provider.dart';
-import '../../core/repositories/demo_repository.dart';
+import '../../core/providers/practice_plan_provider.dart';
 import '../../core/repositories/practice_plan_repository.dart';
-import '../../core/repositories/session_repository.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_text_styles.dart';
 import '../../core/widgets/app_atmosphere.dart';
 import '../../core/widgets/app_illustration.dart';
-import '../../core/widgets/circular_gauge_painter.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -29,14 +28,6 @@ class _HomeScreenState extends State<HomeScreen>
     with SingleTickerProviderStateMixin, AutomaticKeepAliveClientMixin {
   late AnimationController _fadeController;
   late Animation<double> _fadeAnimation;
-
-  // Real recent session — null while loading or when user has none yet
-  SessionSummary? _recentSession;
-  bool _recentSessionLoading = true;
-
-  // Personalized Practice Plan (Feature 6)
-  PracticePlan? _practicePlan;
-  bool _practicePlanLoading = true;
 
   @override
   bool get wantKeepAlive => true;
@@ -53,19 +44,6 @@ class _HomeScreenState extends State<HomeScreen>
       curve: Curves.easeOut,
     );
 
-    // Populate from in-memory cache immediately if available
-    final cached = SessionRepository.instance.cachedRecentSession;
-    if (cached != null) {
-      _recentSession = cached;
-      _recentSessionLoading = false;
-    }
-
-    final cachedPlan = PracticePlanRepository.instance.cachedPlan;
-    if (cachedPlan != null) {
-      _practicePlan = cachedPlan;
-      _practicePlanLoading = false;
-    }
-
     // Defer loads until after the first frame so navigation is not blocked.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
@@ -75,54 +53,24 @@ class _HomeScreenState extends State<HomeScreen>
   }
 
   Future<void> _loadData({bool force = false}) async {
-    if (context.read<UserProvider>().isGuest) {
+    final isGuest = context.read<UserProvider>().isGuest;
+    if (isGuest) {
       context.read<StatsProvider>().loadDemo();
-      if (mounted) {
-        setState(() {
-          _recentSession = DemoRepository.instance.sessions.first;
-          _recentSessionLoading = false;
-          _practicePlan = PracticePlanRepository.defaultFallbackPlan;
-          _practicePlanLoading = false;
-        });
-      }
+      context.read<PracticePlanProvider>().loadPlan(isGuest: true);
       return;
     }
-    // Only show loading if we don't already have a recent session
-    if (_recentSession == null) {
-      setState(() => _recentSessionLoading = true);
-    }
+
     // Load summary stats (feeds the 3 stat cards)
     final userId = context.read<UserProvider>().user.id;
     context.read<StatsProvider>().loadSummaryOnly(force: force, userId: userId);
 
-    // Load the most recent session (feeds the recent session card)
-    try {
-      final session = await SessionRepository.instance.getRecentSession(
-        forceRefresh: force,
-      );
-      if (mounted) {
-        setState(() {
-          _recentSession = session;
-          _recentSessionLoading = false;
-        });
-      }
-    } catch (_) {
-      if (mounted) setState(() => _recentSessionLoading = false);
-    }
-
     // Load personalized practice plan drills (Feature 6)
-    try {
-      final plan = await PracticePlanRepository.instance.getPracticePlan(
-        forceRefresh: force,
-      );
-      if (mounted) {
-        setState(() {
-          _practicePlan = plan;
-          _practicePlanLoading = false;
-        });
-      }
-    } catch (_) {
-      if (mounted) setState(() => _practicePlanLoading = false);
+    if (mounted) {
+      try {
+        await context.read<PracticePlanProvider>().loadPlan(
+          forceRefresh: force,
+        );
+      } catch (_) {}
     }
   }
 
@@ -257,10 +205,11 @@ class _HomeScreenState extends State<HomeScreen>
                   onTap: () => context.push('/interview', extra: 'free_talk'),
                 ),
 
-                const SizedBox(height: 28),
-
-                // Targeted Practice Drills (Feature 6)
-                _buildPracticePlanSection(context),
+                // Targeted Practice Drills (Feature 6) - Dropdown & disappears when completed
+                if (context.watch<PracticePlanProvider>().hasPendingDrills) ...[
+                  const SizedBox(height: 28),
+                  _buildPracticePlanSection(context),
+                ],
 
                 const SizedBox(height: 28),
 
@@ -295,40 +244,52 @@ class _HomeScreenState extends State<HomeScreen>
                   child: _buildProgressStatCards(context),
                 ),
 
-                const SizedBox(height: 24),
-
-                // 6. "Recent Session" Header + View All
-                _buildSectionHeader(
-                  title: 'Recent Session',
-                  trailing: GestureDetector(
-                    onTap: () => context.push('/history'),
-                    child: Text(
-                      'View All >',
-                      style: AppTextStyles.bodyM.copyWith(
-                        color: AppColors.primaryPurple,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ),
-                ),
-
-                const SizedBox(height: 14),
-
-                // 7. Recent Session Card — real data
-                _buildRecentSessionCard(context),
-
-                const SizedBox(height: 24),
+                const SizedBox(height: 28),
 
                 // Learn section — quick access to lesson library
                 _buildSectionHeader(
                   title: 'Learn & Improve',
-                  trailing: GestureDetector(
-                    onTap: () => context.push('/lessons'),
-                    child: Text(
-                      'All Lessons >',
-                      style: AppTextStyles.bodyM.copyWith(
-                        color: AppColors.primaryPurple,
-                        fontWeight: FontWeight.w700,
+                  subtitle: 'Bite-sized coaching guides',
+                  trailing: Material(
+                    color: Colors.transparent,
+                    child: InkWell(
+                      onTap: () => context.push('/lessons'),
+                      borderRadius: BorderRadius.circular(20),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 6,
+                        ),
+                        decoration: BoxDecoration(
+                          color: AppColors.primaryPurple.withValues(
+                            alpha: AppColors.isDark(context) ? 0.22 : 0.08,
+                          ),
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(
+                            color: AppColors.primaryPurple.withValues(
+                              alpha: AppColors.isDark(context) ? 0.40 : 0.22,
+                            ),
+                          ),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              'All Lessons',
+                              style: AppTextStyles.caption.copyWith(
+                                color: AppColors.primaryPurple,
+                                fontWeight: FontWeight.w700,
+                                fontSize: 12,
+                              ),
+                            ),
+                            const SizedBox(width: 4),
+                            const Icon(
+                              Icons.arrow_forward_rounded,
+                              size: 13,
+                              color: AppColors.primaryPurple,
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                   ),
@@ -337,29 +298,73 @@ class _HomeScreenState extends State<HomeScreen>
                 const SizedBox(height: 14),
 
                 // Lesson quick-access row
-                Row(
-                  children: [
-                    _buildLearnChip(
-                      context,
-                      icon: Icons.event_seat_rounded,
-                      label: 'Interview',
-                      color: AppColors.primaryPurple,
-                    ),
-                    const SizedBox(width: 10),
-                    _buildLearnChip(
-                      context,
-                      icon: Icons.bar_chart_rounded,
-                      label: 'Presentation',
-                      color: AppColors.accentBlue,
-                    ),
-                    const SizedBox(width: 10),
-                    _buildLearnChip(
-                      context,
-                      icon: Icons.mic_rounded,
-                      label: 'Speaking',
-                      color: AppColors.accentGreen,
-                    ),
-                  ],
+                Builder(
+                  builder: (context) {
+                    final interviewCount = LessonCatalog.byCategory(
+                      'interview',
+                    ).length;
+                    final presentationCount = LessonCatalog.byCategory(
+                      'presentation',
+                    ).length;
+                    final speakingCount = LessonCatalog.byCategory(
+                      'speaking',
+                    ).length;
+
+                    return Row(
+                      children: [
+                        _buildLearnChip(
+                          context,
+                          icon: Icons.event_seat_rounded,
+                          label: 'Interview',
+                          subtitle:
+                              '$interviewCount ${interviewCount == 1 ? "Lesson" : "Lessons"}',
+                          gradient: const LinearGradient(
+                            colors: [
+                              AppColors.gradientPurpleStart,
+                              AppColors.gradientPurpleEnd,
+                            ],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                          ),
+                          categoryKey: 'Interview',
+                        ),
+                        const SizedBox(width: 10),
+                        _buildLearnChip(
+                          context,
+                          icon: Icons.bar_chart_rounded,
+                          label: 'Presentation',
+                          subtitle:
+                              '$presentationCount ${presentationCount == 1 ? "Lesson" : "Lessons"}',
+                          gradient: const LinearGradient(
+                            colors: [
+                              AppColors.accentBlue,
+                              AppColors.accentBlueDark,
+                            ],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                          ),
+                          categoryKey: 'Presentation',
+                        ),
+                        const SizedBox(width: 10),
+                        _buildLearnChip(
+                          context,
+                          icon: Icons.mic_rounded,
+                          label: 'Speaking',
+                          subtitle:
+                              '$speakingCount ${speakingCount == 1 ? "Lesson" : "Lessons"}',
+                          gradient: const LinearGradient(
+                            colors: [
+                              AppColors.accentGreen,
+                              AppColors.accentGreenLight,
+                            ],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                          ),
+                          categoryKey: 'Speaking',
+                        ),
+                      ],
+                    );
+                  },
                 ),
 
                 const SizedBox(height: 80),
@@ -452,8 +457,7 @@ class _HomeScreenState extends State<HomeScreen>
                 'https://ui-avatars.com/api/?name=${Uri.encodeComponent(user.name)}&background=7C6CF0&color=fff&size=128',
                 width: 40,
                 height: 40,
-                cacheWidth:
-                    80, // 2x for HiDPI — avoids re-decode on rebuild
+                cacheWidth: 80, // 2x for HiDPI — avoids re-decode on rebuild
                 cacheHeight: 80,
                 fit: BoxFit.cover,
                 errorBuilder: (_, _, _) => Center(
@@ -489,60 +493,92 @@ class _HomeScreenState extends State<HomeScreen>
     BuildContext context, {
     required IconData icon,
     required String label,
-    required Color color,
+    required String subtitle,
+    required LinearGradient gradient,
+    required String categoryKey,
   }) {
-    final isDark = AppColors.isDark(context);
     return Expanded(
-      child: InkWell(
-        onTap: () => context.push('/lessons'),
-        borderRadius: BorderRadius.circular(16),
-        child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 8),
-          decoration: BoxDecoration(
-            gradient: isDark
-                ? LinearGradient(
-                    colors: [
-                      color.withValues(alpha: 0.22),
-                      color.withValues(alpha: 0.08),
-                    ],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                  )
-                : null,
-            color: isDark ? null : color.withValues(alpha: 0.08),
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(
-              color: color.withValues(alpha: isDark ? 0.35 : 0.2),
+      child: Container(
+        decoration: BoxDecoration(
+          gradient: gradient,
+          borderRadius: BorderRadius.circular(18),
+          boxShadow: [
+            BoxShadow(
+              color: gradient.colors.first.withValues(alpha: 0.32),
+              blurRadius: 14,
+              offset: const Offset(0, 6),
             ),
-            boxShadow: isDark
-                ? [
-                    BoxShadow(
-                      color: color.withValues(alpha: 0.12),
-                      blurRadius: 16,
-                      offset: const Offset(0, 6),
+          ],
+        ),
+        child: Material(
+          color: Colors.transparent,
+          borderRadius: BorderRadius.circular(18),
+          child: InkWell(
+            onTap: () => context.push('/lessons', extra: categoryKey),
+            borderRadius: BorderRadius.circular(18),
+            splashColor: Colors.white.withValues(alpha: 0.2),
+            highlightColor: Colors.white.withValues(alpha: 0.1),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 6),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  Container(
+                    width: 44,
+                    height: 44,
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.2),
+                      borderRadius: BorderRadius.circular(13),
+                      border: Border.all(
+                        color: Colors.white.withValues(alpha: 0.18),
+                      ),
                     ),
-                  ]
-                : null,
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                icon,
-                color: isDark ? color.withValues(alpha: 0.95) : color,
-                size: 22,
+                    child: Center(
+                      child: Icon(icon, color: Colors.white, size: 22),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Text(
+                    label,
+                    style: AppTextStyles.bodySmallBold.copyWith(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 12.5,
+                      letterSpacing: -0.2,
+                    ),
+                    textAlign: TextAlign.center,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 5),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 2.5,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.2),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(
+                        color: Colors.white.withValues(alpha: 0.25),
+                        width: 0.8,
+                      ),
+                    ),
+                    child: Text(
+                      subtitle,
+                      style: AppTextStyles.caption.copyWith(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 10.5,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
               ),
-              const SizedBox(height: 6),
-              Text(
-                label,
-                style: AppTextStyles.caption.copyWith(
-                  color: isDark ? AppColors.textOnDark : color,
-                  fontWeight: FontWeight.w700,
-                  fontSize: 11,
-                ),
-                textAlign: TextAlign.center,
-              ),
-            ],
+            ),
           ),
         ),
       ),
@@ -550,7 +586,8 @@ class _HomeScreenState extends State<HomeScreen>
   }
 
   Widget _buildPracticePlanSection(BuildContext context) {
-    if (_practicePlanLoading && _practicePlan == null) {
+    final planProvider = context.watch<PracticePlanProvider>();
+    if (planProvider.isLoading && planProvider.plan == null) {
       return Container(
         padding: const EdgeInsets.all(20),
         decoration: BoxDecoration(
@@ -580,123 +617,180 @@ class _HomeScreenState extends State<HomeScreen>
       );
     }
 
-    final plan = _practicePlan ?? PracticePlanRepository.defaultFallbackPlan;
+    final plan =
+        planProvider.plan ?? PracticePlanRepository.defaultFallbackPlan;
     final diagnosis = plan.diagnosis;
-    final completedCount = plan.drills.where((d) => d.isCompleted).length;
+    final pendingDrills = planProvider.pendingDrills;
+    final completedCount = planProvider.completedDrills.length;
+    final totalCount = plan.drills.length;
+
+    // When the user completes it, just disappear it (remove from Home screen)
+    if (pendingDrills.isEmpty) {
+      return const SizedBox.shrink();
+    }
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Row(
+        // Dropdown Clickable Header
+        InkWell(
+          onTap: () => planProvider.toggleCollapsed(),
+          borderRadius: BorderRadius.circular(12),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 4),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text(
-                  'Targeted Drills',
-                  style: AppTextStyles.headingL.copyWith(
-                    color: AppColors.textPrimaryOf(context),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                  decoration: BoxDecoration(
-                    color: AppColors.primaryPurple.withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(
-                      color: AppColors.primaryPurple.withValues(alpha: 0.3),
-                    ),
-                  ),
-                  child: Text(
-                    diagnosis.weakestMetric.toUpperCase(),
-                    style: AppTextStyles.caption.copyWith(
-                      color: AppColors.primaryPurple,
-                      fontWeight: FontWeight.w700,
-                      fontSize: 10,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            Text(
-              '$completedCount/3 Done',
-              style: AppTextStyles.caption.copyWith(
-                color: completedCount == 3
-                    ? AppColors.accentGreen
-                    : AppColors.textSecondaryOf(context),
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 10),
-        // Diagnostic Insight Card
-        Container(
-          width: double.infinity,
-          padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(
-            color: AppColors.primaryPurple.withValues(alpha: 0.06),
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(
-              color: AppColors.primaryPurple.withValues(alpha: 0.18),
-            ),
-          ),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Icon(
-                Icons.auto_awesome_rounded,
-                color: AppColors.primaryPurple,
-                size: 20,
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      diagnosis.diagnosticsSummary,
-                      style: AppTextStyles.bodyM.copyWith(
-                        color: AppColors.textPrimaryOf(context),
-                        height: 1.35,
+                Expanded(
+                  child: Row(
+                    children: [
+                      Flexible(
+                        child: Text(
+                          'Targeted Drills',
+                          style: AppTextStyles.headingL.copyWith(
+                            color: AppColors.textPrimaryOf(context),
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
                       ),
-                    ),
-                    if (diagnosis.scoreTrend != 'insufficient_data') ...[
-                      const SizedBox(height: 4),
-                      Text(
-                        'Score Trend: ${diagnosis.scoreTrend.toUpperCase()} • ${diagnosis.sessionsAnalyzed} sessions analyzed',
-                        style: AppTextStyles.caption.copyWith(
-                          color: AppColors.textSecondaryOf(context),
-                          fontSize: 11,
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 3,
+                        ),
+                        decoration: BoxDecoration(
+                          color: AppColors.primaryPurple.withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                            color: AppColors.primaryPurple.withValues(alpha: 0.3),
+                          ),
+                        ),
+                        child: Text(
+                          diagnosis.weakestMetric.toUpperCase(),
+                          style: AppTextStyles.caption.copyWith(
+                            color: AppColors.primaryPurple,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 10,
+                          ),
                         ),
                       ),
                     ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      '$completedCount/$totalCount Done',
+                      style: AppTextStyles.caption.copyWith(
+                        color: completedCount > 0
+                            ? AppColors.accentGreen
+                            : AppColors.textSecondaryOf(context),
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    AnimatedRotation(
+                      turns: planProvider.isCollapsed ? 0.0 : 0.5,
+                      duration: const Duration(milliseconds: 200),
+                      child: Icon(
+                        Icons.keyboard_arrow_down_rounded,
+                        size: 22,
+                        color: AppColors.textSecondaryOf(context),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+
+        // Dropdown Collapsible Content
+        AnimatedCrossFade(
+          firstChild: const SizedBox.shrink(),
+          secondChild: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const SizedBox(height: 10),
+              // Diagnostic Insight Card
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: AppColors.primaryPurple.withValues(alpha: 0.06),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(
+                    color: AppColors.primaryPurple.withValues(alpha: 0.18),
+                  ),
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Icon(
+                      Icons.auto_awesome_rounded,
+                      color: AppColors.primaryPurple,
+                      size: 20,
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            diagnosis.diagnosticsSummary,
+                            style: AppTextStyles.bodyM.copyWith(
+                              color: AppColors.textPrimaryOf(context),
+                              height: 1.35,
+                            ),
+                          ),
+                          if (diagnosis.scoreTrend != 'insufficient_data') ...[
+                            const SizedBox(height: 4),
+                            Text(
+                              'Score Trend: ${diagnosis.scoreTrend.toUpperCase()} • ${diagnosis.sessionsAnalyzed} sessions analyzed',
+                              style: AppTextStyles.caption.copyWith(
+                                color: AppColors.textSecondaryOf(context),
+                                fontSize: 11,
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
                   ],
                 ),
               ),
+              const SizedBox(height: 12),
+              // Drills list - only active/pending drills are shown! Completed drills disappear.
+              ...pendingDrills.map(
+                (drill) => _buildDrillCard(context, drill, planProvider),
+              ),
             ],
           ),
+          crossFadeState: planProvider.isCollapsed
+              ? CrossFadeState.showFirst
+              : CrossFadeState.showSecond,
+          duration: const Duration(milliseconds: 220),
         ),
-        const SizedBox(height: 12),
-        // Drills list
-        ...plan.drills.map((drill) => _buildDrillCard(context, drill)),
       ],
     );
   }
 
-  Widget _buildDrillCard(BuildContext context, PracticeDrill drill) {
+  Widget _buildDrillCard(
+    BuildContext context,
+    PracticeDrill drill,
+    PracticePlanProvider planProvider,
+  ) {
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: AppColors.cardOf(context),
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(
-          color: drill.isCompleted
-              ? AppColors.accentGreen.withValues(alpha: 0.35)
-              : AppColors.borderOf(context),
-        ),
+        border: Border.all(color: AppColors.borderOf(context)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -709,14 +803,12 @@ class _HomeScreenState extends State<HomeScreen>
                 height: 32,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  color: drill.isCompleted
-                      ? AppColors.accentGreen.withValues(alpha: 0.15)
-                      : AppColors.primaryPurple.withValues(alpha: 0.12),
+                  color: AppColors.primaryPurple.withValues(alpha: 0.12),
                 ),
-                child: Icon(
-                  drill.isCompleted ? Icons.check_circle_rounded : Icons.timer_outlined,
+                child: const Icon(
+                  Icons.timer_outlined,
                   size: 18,
-                  color: drill.isCompleted ? AppColors.accentGreen : AppColors.primaryPurple,
+                  color: AppColors.primaryPurple,
                 ),
               ),
               const SizedBox(width: 10),
@@ -731,13 +823,14 @@ class _HomeScreenState extends State<HomeScreen>
                             drill.title,
                             style: AppTextStyles.bodySmallBold.copyWith(
                               color: AppColors.textPrimaryOf(context),
-                              decoration:
-                                  drill.isCompleted ? TextDecoration.lineThrough : null,
                             ),
                           ),
                         ),
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 7,
+                            vertical: 2,
+                          ),
                           decoration: BoxDecoration(
                             color: AppColors.surfaceSubtleOf(context),
                             borderRadius: BorderRadius.circular(6),
@@ -779,42 +872,78 @@ class _HomeScreenState extends State<HomeScreen>
           Row(
             mainAxisAlignment: MainAxisAlignment.end,
             children: [
-              if (drill.isCompleted)
-                Row(
-                  children: [
-                    const Icon(Icons.done_all_rounded, size: 16, color: AppColors.accentGreen),
-                    const SizedBox(width: 4),
-                    Text(
-                      'Completed',
-                      style: AppTextStyles.caption.copyWith(
-                        color: AppColors.accentGreen,
-                        fontWeight: FontWeight.w700,
+              OutlinedButton.icon(
+                onPressed: () async {
+                  await planProvider.completeDrill(drill.id);
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(
+                          'Evaluated & completed "${drill.title}"! Stored in Progress.',
+                        ),
+                        backgroundColor: AppColors.accentGreen,
+                        behavior: SnackBarBehavior.floating,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        action: SnackBarAction(
+                          label: 'View Progress',
+                          textColor: Colors.white,
+                          onPressed: () => context.go('/progress'),
+                        ),
                       ),
-                    ),
-                  ],
-                )
-              else
-                ElevatedButton.icon(
-                  onPressed: () => _launchDrill(drill),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.primaryPurple,
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                    minimumSize: Size.zero,
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10),
-                    ),
+                    );
+                  }
+                },
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: AppColors.accentGreen,
+                  side: BorderSide(
+                    color: AppColors.accentGreen.withValues(alpha: 0.5),
                   ),
-                  icon: const Icon(Icons.play_arrow_rounded, size: 16),
-                  label: Text(
-                    'Start Drill',
-                    style: AppTextStyles.caption.copyWith(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w700,
-                    ),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 7,
+                  ),
+                  minimumSize: Size.zero,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
                   ),
                 ),
+                icon: const Icon(Icons.check_circle_outline_rounded, size: 15),
+                label: Text(
+                  'Mark Complete',
+                  style: AppTextStyles.caption.copyWith(
+                    color: AppColors.accentGreen,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              ElevatedButton.icon(
+                onPressed: () => _launchDrill(drill),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.primaryPurple,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 8,
+                  ),
+                  minimumSize: Size.zero,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                ),
+                icon: const Icon(Icons.play_arrow_rounded, size: 16),
+                label: Text(
+                  'Start Drill',
+                  style: AppTextStyles.caption.copyWith(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
             ],
           ),
         ],
@@ -840,16 +969,35 @@ class _HomeScreenState extends State<HomeScreen>
   Widget _buildSectionHeader({
     required String title,
     required Widget trailing,
+    String? subtitle,
   }) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      crossAxisAlignment: CrossAxisAlignment.center,
+      crossAxisAlignment: subtitle != null
+          ? CrossAxisAlignment.end
+          : CrossAxisAlignment.center,
       children: [
-        Text(
-          title,
-          style: AppTextStyles.headingL.copyWith(
-            color: AppColors.textPrimaryOf(context),
-          ),
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              title,
+              style: AppTextStyles.headingL.copyWith(
+                color: AppColors.textPrimaryOf(context),
+              ),
+            ),
+            if (subtitle != null) ...[
+              const SizedBox(height: 2),
+              Text(
+                subtitle,
+                style: AppTextStyles.caption.copyWith(
+                  color: AppColors.textSecondaryOf(context),
+                  fontSize: 12,
+                ),
+              ),
+            ],
+          ],
         ),
         trailing,
       ],
@@ -959,217 +1107,6 @@ class _HomeScreenState extends State<HomeScreen>
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
           ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildRecentSessionCard(BuildContext context) {
-    // Loading skeleton
-    if (_recentSessionLoading) {
-      return GlassSurface(
-        padding: const EdgeInsets.all(16),
-        borderRadius: BorderRadius.circular(18),
-        child: const SizedBox(
-          height: 44,
-          child: Center(
-            child: SizedBox(
-              height: 20,
-              width: 20,
-              child: CircularProgressIndicator(
-                strokeWidth: 2,
-                valueColor: AlwaysStoppedAnimation<Color>(
-                  AppColors.primaryPurple,
-                ),
-              ),
-            ),
-          ),
-        ),
-      );
-    }
-
-    // No sessions yet — prompt user to start
-    if (_recentSession == null) {
-      return GlassSurface(
-        onTap: () => context.push('/interview'),
-        padding: const EdgeInsets.all(18),
-        borderRadius: BorderRadius.circular(18),
-        child: Row(
-          children: [
-            Container(
-              width: 44,
-              height: 44,
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [
-                    AppColors.primaryPurple.withValues(alpha: 0.28),
-                    AppColors.auroraCyan.withValues(alpha: 0.12),
-                  ],
-                ),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(
-                  color: AppColors.primaryPurple.withValues(alpha: 0.25),
-                ),
-              ),
-              child: const Icon(
-                Icons.add_rounded,
-                color: AppColors.primaryPurpleLight,
-                size: 24,
-              ),
-            ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'No sessions yet',
-                    style: AppTextStyles.headingM.copyWith(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.textPrimaryOf(context),
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    'Tap to start your first practice session!',
-                    style: AppTextStyles.caption.copyWith(
-                      color: AppColors.textSecondaryOf(context),
-                      fontSize: 12,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            Icon(
-              Icons.chevron_right_rounded,
-              color: AppColors.textSecondaryOf(context),
-              size: 22,
-            ),
-          ],
-        ),
-      );
-    }
-
-    // Real most-recent session
-    final session = _recentSession!;
-    final scoreColor = session.overallScore >= 80
-        ? AppColors.successGreen
-        : session.overallScore >= 60
-        ? AppColors.warningAmber
-        : AppColors.dangerRed;
-    final modeIcon = session.mode == 'presentation'
-        ? Icons.bar_chart_rounded
-        : session.mode == 'free_talk'
-        ? Icons.mic_rounded
-        : Icons.event_seat_rounded;
-
-    return GlassSurface(
-      onTap: () => context.push('/results', extra: session.id),
-      padding: const EdgeInsets.all(16),
-      borderRadius: BorderRadius.circular(18),
-      child: Row(
-        children: [
-          Container(
-            width: 44,
-            height: 44,
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [
-                  AppColors.primaryPurple.withValues(alpha: 0.3),
-                  AppColors.gradientPurpleEnd.withValues(alpha: 0.12),
-                ],
-              ),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Icon(
-              modeIcon,
-              color: AppColors.primaryPurpleLight,
-              size: 24,
-            ),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  session.modeLabel,
-                  style: AppTextStyles.headingM.copyWith(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.textPrimaryOf(context),
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  session.topicOrQuestion,
-                  style: AppTextStyles.caption.copyWith(
-                    color: AppColors.textSecondaryOf(context),
-                    fontSize: 12,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  '${session.dateFormatted} · ${session.durationFormatted}',
-                  style: AppTextStyles.caption.copyWith(
-                    color: AppColors.textSecondaryOf(
-                      context,
-                    ).withValues(alpha: 0.75),
-                    fontSize: 11,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          session.analysisFailed
-              ? const Tooltip(
-                  message: 'Analysis failed — tap to retry',
-                  child: Icon(
-                    Icons.error_outline_rounded,
-                    color: AppColors.warningAmber,
-                    size: 30,
-                  ),
-                )
-              : !session.isAnalyzed
-                  ? Container(
-                      key: const Key('home_recent_pending_indicator'),
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 4,
-                      ),
-                      decoration: BoxDecoration(
-                        color: AppColors.warningAmber.withValues(alpha: 0.15),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: const Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            Icons.cloud_upload_outlined,
-                            size: 14,
-                            color: AppColors.warningAmber,
-                          ),
-                          SizedBox(width: 4),
-                          Text(
-                            'Pending',
-                            style: TextStyle(
-                              color: AppColors.warningAmber,
-                              fontSize: 11,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ],
-                      ),
-                    )
-                  : CircularGauge(
-                      value: session.overallScore,
-                      size: 46,
-                      strokeWidth: 4.5,
-                      gradientColors: [scoreColor, scoreColor],
-                    ),
         ],
       ),
     );

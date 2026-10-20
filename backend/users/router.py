@@ -111,31 +111,14 @@ def delete_account(
     db: fs.Client = Depends(get_db),
 ):
     """Permanently delete user account and cascade delete associated records."""
+    from auth.account_service import delete_user_account
     user_id = current_user.id
+    results = delete_user_account(current_user, db=db)
 
-    # 1. Cascade delete sessions
-    sessions = db.collection(SESSIONS_COL).where("user_id", "==", user_id).stream()
-    for s in sessions:
-        s.reference.delete()
+    return {
+        "status": "success",
+        "message": "Account successfully deleted",
+        "user_id": user_id,
+        **results,
+    }
 
-    # 2. Cascade delete slide decks
-    decks = db.collection(SLIDE_DECKS_COL).where("user_id", "==", user_id).stream()
-    for d in decks:
-        d.reference.delete()
-
-    # 3. Delete user achievements sub-collections or records
-    achievements = db.collection(ACHIEVEMENTS_COL).where("user_id", "==", user_id).stream()
-    for a in achievements:
-        a.reference.delete()
-
-    # 4. Delete user document
-    db.collection(USERS_COL).document(user_id).delete()
-
-    # 5. Clean up avatar on disk if any
-    for existing in AVATARS_DIR.glob(f"{user_id}_*"):
-        try:
-            existing.unlink(missing_ok=True)
-        except OSError:
-            pass
-
-    return {"status": "success", "message": "Account successfully deleted", "user_id": user_id}

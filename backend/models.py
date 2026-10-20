@@ -122,6 +122,11 @@ class PracticeSession:
     energy_curve: Optional[List[float]] = None
     pitch_variation_score: Optional[float] = None
     volume_consistency_score: Optional[float] = None
+    no_speech: Optional[bool] = None
+    active_wpm: Optional[float] = None
+    repetitions_count: Optional[int] = None
+    rhetorical_pause_count: Optional[int] = None
+    disfluent_pause_count: Optional[int] = None
 
     ai_feedback: List[Dict[str, Any]] = field(default_factory=list)
     created_at: datetime = field(default_factory=_now_utc)
@@ -145,6 +150,11 @@ class PracticeSession:
             "energy_curve": self.energy_curve or [],
             "pitch_variation_score": self.pitch_variation_score,
             "volume_consistency_score": self.volume_consistency_score,
+            "no_speech": self.no_speech,
+            "active_wpm": self.active_wpm,
+            "repetitions_count": self.repetitions_count,
+            "rhetorical_pause_count": self.rhetorical_pause_count,
+            "disfluent_pause_count": self.disfluent_pause_count,
             "mode": self.mode,
             "topic_or_question": self.topic_or_question,
             "audio_url": self.audio_url,
@@ -192,6 +202,11 @@ class PracticeSession:
             energy_curve=d.get("energy_curve") or [],
             pitch_variation_score=d.get("pitch_variation_score"),
             volume_consistency_score=d.get("volume_consistency_score"),
+            no_speech=d.get("no_speech"),
+            active_wpm=d.get("active_wpm"),
+            repetitions_count=d.get("repetitions_count"),
+            rhetorical_pause_count=d.get("rhetorical_pause_count"),
+            disfluent_pause_count=d.get("disfluent_pause_count"),
             mode=d.get("mode", "interview"),
             topic_or_question=d.get("topic_or_question", ""),
             audio_url=d.get("audio_url"),

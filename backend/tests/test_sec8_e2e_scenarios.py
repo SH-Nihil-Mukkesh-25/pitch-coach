@@ -202,12 +202,13 @@ class TestSection8E2EScenarios:
     # 8. Scenario 8: Late-night pitch in IST
     def test_scenario_8_late_night_pitch_ist(self, monkeypatch):
         monkeypatch.setattr("sessions.router.analyze_audio", lambda **kw: self._mock_analysis(89.0))
-        # 1 AM IST on Oct 10
-        resp, sid = self._post(local_date="2026-10-10", tz_offset=330)
+        # 1 AM IST on current local date
+        now_date = (datetime.now(timezone.utc) + timedelta(minutes=330)).strftime("%Y-%m-%d")
+        resp, sid = self._post(local_date=now_date, tz_offset=330)
         assert resp.status_code == 200
 
         d1_row = self.fake_d1.query("SELECT local_date FROM session_metrics WHERE id = ?", [sid])[0]
-        assert d1_row["local_date"] == "2026-10-10"
+        assert d1_row["local_date"] == now_date
 
         fs_sessions = [d.to_dict() for d in self.fake_db.collection("sessions").get()]
         report = auditor.audit_consistency(self.user.id, firestore_sessions=fs_sessions, d1_connection=self.fake_d1)

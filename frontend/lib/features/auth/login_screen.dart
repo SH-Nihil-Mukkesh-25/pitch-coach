@@ -240,9 +240,14 @@ class _LoginScreenState extends State<LoginScreen> {
                 Container(
                   padding: const EdgeInsets.all(4),
                   decoration: BoxDecoration(
-                    color: AppColors.cardOf(context),
+                    color: isDark ? const Color(0xFF1C1C1E) : AppColors.cardOf(context),
                     borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: AppColors.borderOf(context)),
+                    border: Border.all(
+                      color: isDark
+                          ? Colors.white.withValues(alpha: 0.10)
+                          : AppColors.borderOf(context),
+                      width: 0.8,
+                    ),
                     boxShadow: AppColors.softShadowOf(context),
                   ),
                   child: Row(
@@ -255,9 +260,18 @@ class _LoginScreenState extends State<LoginScreen> {
                             padding: const EdgeInsets.symmetric(vertical: 12),
                             decoration: BoxDecoration(
                               color: !_isSignUp
-                                  ? AppColors.primaryPurple
+                                  ? (isDark ? const Color(0xFF38383A) : AppColors.primaryPurple)
                                   : Colors.transparent,
                               borderRadius: BorderRadius.circular(12),
+                              boxShadow: (!_isSignUp && isDark)
+                                  ? [
+                                      BoxShadow(
+                                        color: Colors.black.withValues(alpha: 0.35),
+                                        blurRadius: 6,
+                                        offset: const Offset(0, 2),
+                                      ),
+                                    ]
+                                  : null,
                             ),
                             alignment: Alignment.center,
                             child: Text(
@@ -265,7 +279,10 @@ class _LoginScreenState extends State<LoginScreen> {
                               style: AppTextStyles.button.copyWith(
                                 color: !_isSignUp
                                     ? Colors.white
-                                    : AppColors.textSecondaryOf(context),
+                                    : (isDark
+                                        ? const Color(0xFF8E8E93)
+                                        : AppColors.textSecondaryOf(context)),
+                                fontWeight: !_isSignUp ? FontWeight.w700 : FontWeight.w500,
                               ),
                             ),
                           ),
@@ -279,9 +296,18 @@ class _LoginScreenState extends State<LoginScreen> {
                             padding: const EdgeInsets.symmetric(vertical: 12),
                             decoration: BoxDecoration(
                               color: _isSignUp
-                                  ? AppColors.primaryPurple
+                                  ? (isDark ? const Color(0xFF38383A) : AppColors.primaryPurple)
                                   : Colors.transparent,
                               borderRadius: BorderRadius.circular(12),
+                              boxShadow: (_isSignUp && isDark)
+                                  ? [
+                                      BoxShadow(
+                                        color: Colors.black.withValues(alpha: 0.35),
+                                        blurRadius: 6,
+                                        offset: const Offset(0, 2),
+                                      ),
+                                    ]
+                                  : null,
                             ),
                             alignment: Alignment.center,
                             child: Text(
@@ -289,7 +315,10 @@ class _LoginScreenState extends State<LoginScreen> {
                               style: AppTextStyles.button.copyWith(
                                 color: _isSignUp
                                     ? Colors.white
-                                    : AppColors.textSecondaryOf(context),
+                                    : (isDark
+                                        ? const Color(0xFF8E8E93)
+                                        : AppColors.textSecondaryOf(context)),
+                                fontWeight: _isSignUp ? FontWeight.w700 : FontWeight.w500,
                               ),
                             ),
                           ),

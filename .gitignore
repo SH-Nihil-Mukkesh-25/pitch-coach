@@ -70,6 +70,7 @@ htmlcov/
 # Backend runtime data
 backend/audio_files/
 backend/slide_decks/
+backend/avatars/
 backend/*.db
 backend/*.db-shm
 backend/*.db-wal

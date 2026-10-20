@@ -159,6 +159,7 @@ abstract class AppTheme {
       headlineLarge: AppTextStyles.headingXL.copyWith(color: primary),
       headlineMedium: AppTextStyles.headingL.copyWith(color: primary),
       titleMedium: AppTextStyles.headingM.copyWith(color: primary),
+      bodyLarge: AppTextStyles.bodyM.copyWith(color: primary, fontSize: 16),
       bodyMedium: AppTextStyles.bodyM.copyWith(color: secondary),
       bodySmall: AppTextStyles.bodySmallBold.copyWith(color: secondary),
       labelSmall: AppTextStyles.caption.copyWith(color: secondary),
@@ -181,7 +182,9 @@ abstract class AppTheme {
       filled: true,
       fillColor: fill,
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-      hintStyle: AppTextStyles.bodyM,
+      hintStyle: AppTextStyles.bodyM.copyWith(
+        color: isDark ? const Color(0xFF8E8E93) : const Color(0xFF8E8E93),
+      ),
       labelStyle: AppTextStyles.label.copyWith(
         color: isDark ? AppColors.textOnDark : AppColors.textPrimaryDark,
       ),

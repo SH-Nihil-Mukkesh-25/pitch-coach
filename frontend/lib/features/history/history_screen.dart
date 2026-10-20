@@ -132,7 +132,9 @@ class _HistoryScreenState extends State<HistoryScreen>
     try {
       final user = context.read<UserProvider>().user;
       if (user.id.isNotEmpty && user.id != 'guest') {
-        final count = await OutboxWorker.instance.getPendingCount(userId: user.id);
+        final count = await OutboxWorker.instance.getPendingCount(
+          userId: user.id,
+        );
         if (mounted) {
           setState(() => _pendingOutboxCount = count);
         }
@@ -221,10 +223,7 @@ class _HistoryScreenState extends State<HistoryScreen>
                   )
                 : const Text(
                     'Sync Now',
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w700,
-                    ),
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
                   ),
           ),
         ],
@@ -586,43 +585,43 @@ class _HistoryScreenState extends State<HistoryScreen>
                   ),
                 )
               : !session.isAnalyzed
-                  ? Container(
-                      key: Key('pending_indicator_${session.id}'),
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 4,
+              ? Container(
+                  key: Key('pending_indicator_${session.id}'),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    color: AppColors.warningAmber.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.cloud_upload_outlined,
+                        size: 14,
+                        color: AppColors.warningAmber,
                       ),
-                      decoration: BoxDecoration(
-                        color: AppColors.warningAmber.withValues(alpha: 0.15),
-                        borderRadius: BorderRadius.circular(8),
+                      SizedBox(width: 4),
+                      Text(
+                        'Pending',
+                        style: TextStyle(
+                          color: AppColors.warningAmber,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
-                      child: const Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            Icons.cloud_upload_outlined,
-                            size: 14,
-                            color: AppColors.warningAmber,
-                          ),
-                          SizedBox(width: 4),
-                          Text(
-                            'Pending',
-                            style: TextStyle(
-                              color: AppColors.warningAmber,
-                              fontSize: 11,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ],
-                      ),
-                    )
-                  : CircularGauge(
-                      value: score,
-                      size: 46,
-                      strokeWidth: 4.5,
-                      centerBigText: '${score.round()}%',
-                      gradientColors: [scoreColor, scoreColor],
-                    ),
+                    ],
+                  ),
+                )
+              : CircularGauge(
+                  value: score,
+                  size: 46,
+                  strokeWidth: 4.5,
+                  centerBigText: '${score.round()}%',
+                  gradientColors: [scoreColor, scoreColor],
+                ),
           isThreeLine: true,
         ),
       ),
