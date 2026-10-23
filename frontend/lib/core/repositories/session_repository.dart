@@ -151,6 +151,7 @@ class SessionRepository {
     _pendingDeletePaths.clear();
     _currentAudioPath = null;
     _currentSessionId = null;
+    invalidateCache();
   }
 
   /// Cleans up any audio files that were staged for deletion from previous sessions.

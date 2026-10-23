@@ -10,6 +10,7 @@ import '../../core/providers/session_results_provider.dart';
 import '../../core/providers/user_provider.dart';
 import '../../core/repositories/demo_repository.dart';
 import '../../core/repositories/session_repository.dart';
+import '../../core/services/api_client.dart';
 import '../../core/services/report_service.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_text_styles.dart';
@@ -177,6 +178,40 @@ class _ResultsScreenState extends State<ResultsScreen>
         });
       }
     });
+  }
+
+  Future<Source> _resolveAudioSource(String uri) async {
+    final isRemote = uri.startsWith('http://') || uri.startsWith('https://');
+    if (!isRemote) {
+      return DeviceFileSource(uri);
+    }
+    final token = await ApiClient.getAccessToken();
+    String finalUri = uri;
+    if (token != null && token.isNotEmpty && !finalUri.contains('token=')) {
+      final separator = finalUri.contains('?') ? '&' : '?';
+      finalUri = '$finalUri${separator}token=$token';
+    }
+    return UrlSource(finalUri);
+  }
+
+  Future<void> _safePlaySource(Source source, {Duration? position}) async {
+    try {
+      if (position != null) {
+        await _audioPlayer.play(source, position: position);
+      } else {
+        await _audioPlayer.play(source);
+      }
+    } catch (e) {
+      debugPrint('[ResultsScreen] Audio playback error: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Unable to play audio recording.'),
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+    }
   }
 
   void _checkAndFetchParent(SessionResult currentResult) {
@@ -904,24 +939,23 @@ class _ResultsScreenState extends State<ResultsScreen>
                     label: _isPlaying ? 'Pause audio playback' : 'Play audio playback',
                     child: GestureDetector(
                       onTap: () async {
-                        if (_isPlaying) {
-                          await _audioPlayer.pause();
-                        } else {
-                          if (_audioPosition >= _audioDuration &&
-                              _audioDuration > Duration.zero) {
-                            await _audioPlayer.seek(Duration.zero);
-                            await _audioPlayer.resume();
-                          } else if (_audioDuration == Duration.zero) {
-                            final isRemote =
-                                audioUri.startsWith('http://') ||
-                                audioUri.startsWith('https://');
-                            final Source source = isRemote
-                                ? UrlSource(audioUri)
-                                : DeviceFileSource(audioUri);
-                            await _audioPlayer.play(source);
+                        try {
+                          if (_isPlaying) {
+                            await _audioPlayer.pause();
                           } else {
-                            await _audioPlayer.resume();
+                            if (_audioPosition >= _audioDuration &&
+                                _audioDuration > Duration.zero) {
+                              await _audioPlayer.seek(Duration.zero);
+                              await _audioPlayer.resume();
+                            } else if (_audioDuration == Duration.zero) {
+                              final source = await _resolveAudioSource(audioUri);
+                              await _safePlaySource(source);
+                            } else {
+                              await _audioPlayer.resume();
+                            }
                           }
+                        } catch (e) {
+                          debugPrint('[ResultsScreen] Audio control error: $e');
                         }
                       },
                       child: Container(
@@ -1005,17 +1039,18 @@ class _ResultsScreenState extends State<ResultsScreen>
 
     final audioUri = result?.playableAudioUri;
     if (audioUri != null && audioUri.isNotEmpty) {
-      if (_audioDuration == Duration.zero) {
-        final isRemote =
-            audioUri.startsWith('http://') || audioUri.startsWith('https://');
-        final Source source =
-            isRemote ? UrlSource(audioUri) : DeviceFileSource(audioUri);
-        await _audioPlayer.play(source, position: targetDuration);
-      } else {
-        await _audioPlayer.seek(targetDuration);
-        if (!_isPlaying) {
-          await _audioPlayer.resume();
+      try {
+        if (_audioDuration == Duration.zero) {
+          final source = await _resolveAudioSource(audioUri);
+          await _safePlaySource(source, position: targetDuration);
+        } else {
+          await _audioPlayer.seek(targetDuration);
+          if (!_isPlaying) {
+            await _audioPlayer.resume();
+          }
         }
+      } catch (e) {
+        debugPrint('[ResultsScreen] Seek audio playback error: $e');
       }
     } else {
       // Local / demo simulation without audio file
@@ -2598,7 +2633,12 @@ class _ResultsScreenState extends State<ResultsScreen>
                           bottomTitles: AxisTitles(
                             sideTitles: SideTitles(
                               showTitles: true,
+                              interval: 1.0,
                               getTitlesWidget: (val, meta) {
+                                final rounded = val.round();
+                                if ((val - rounded).abs() > 0.01) {
+                                  return const SizedBox.shrink();
+                                }
                                 const days = [
                                   'Mon',
                                   'Tue',
@@ -2608,7 +2648,7 @@ class _ResultsScreenState extends State<ResultsScreen>
                                   'Sat',
                                   'Sun',
                                 ];
-                                final idx = val.toInt();
+                                final idx = rounded;
                                 if (idx >= 0 && idx < days.length) {
                                   return Padding(
                                     padding: const EdgeInsets.only(top: 6.0),
@@ -2621,7 +2661,7 @@ class _ResultsScreenState extends State<ResultsScreen>
                                     ),
                                   );
                                 }
-                                return const SizedBox();
+                                return const SizedBox.shrink();
                               },
                             ),
                           ),

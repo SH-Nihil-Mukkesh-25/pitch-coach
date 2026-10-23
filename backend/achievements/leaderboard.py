@@ -13,8 +13,7 @@ from typing import Any, Dict, List, Optional
 
 from achievements.challenges import get_current_week_id, get_current_week_start
 from d1.d1_client import get_d1_client
-from firestore import get_db
-from models import SESSIONS_COL, USERS_COL
+from database.mongodb import get_db, SESSIONS_COL, USERS_COL
 
 logger = logging.getLogger(__name__)
 
@@ -39,7 +38,7 @@ def get_weekly_leaderboard(
     week_id = get_current_week_id(start_dt)
 
     d1 = d1_client or get_d1_client()
-    firestore_db = db or get_db()
+    mongo_db = db or get_db()
 
     aggregated_users: List[Dict[str, Any]] = []
 
@@ -67,10 +66,10 @@ def get_weekly_leaderboard(
             aggregated_users = []
 
     # 2. Firestore fallback if D1 empty or not configured
-    if not aggregated_users and firestore_db:
+    if not aggregated_users and mongo_db:
         try:
             docs = (
-                firestore_db.collection(SESSIONS_COL)
+                mongo_db.collection(SESSIONS_COL)
                 .where("is_analyzed", "==", True)
                 .get()
             )
@@ -113,12 +112,12 @@ def get_weekly_leaderboard(
 
     # 3. Retrieve user privacy preferences from Firestore
     user_settings_map: Dict[str, Dict[str, Any]] = {}
-    if firestore_db and aggregated_users:
+    if mongo_db and aggregated_users:
         all_uids = {u["user_id"] for u in aggregated_users}
         all_uids.add(current_user_id)
         for uid in all_uids:
             try:
-                udoc = firestore_db.collection(USERS_COL).document(uid).get()
+                udoc = mongo_db.collection(USERS_COL).document(uid).get()
                 if udoc.exists:
                     udata = udoc.to_dict()
                     user_settings_map[uid] = {

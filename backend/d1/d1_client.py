@@ -61,9 +61,9 @@ class D1Client:
         http_client: Optional[httpx.Client] = None,
     ):
         settings = get_settings()
-        self.account_id = account_id or settings.CF_ACCOUNT_ID or os.getenv("CF_ACCOUNT_ID", "")
-        self.database_id = database_id or settings.CF_D1_DATABASE_ID or os.getenv("CF_D1_DATABASE_ID", "")
-        self.api_token = api_token or settings.CF_API_TOKEN or os.getenv("CF_API_TOKEN", "")
+        self.account_id = account_id if account_id is not None else (settings.CF_ACCOUNT_ID or os.getenv("CF_ACCOUNT_ID", ""))
+        self.database_id = database_id if database_id is not None else (settings.CF_D1_DATABASE_ID or os.getenv("CF_D1_DATABASE_ID", ""))
+        self.api_token = api_token if api_token is not None else (settings.CF_API_TOKEN or os.getenv("CF_API_TOKEN", ""))
         self.timeout_seconds = timeout_seconds
         self.max_retries = max_retries
 
@@ -172,11 +172,7 @@ class D1Client:
         self,
         statements: List[Union[Tuple[str, List[Any]], Dict[str, Any]]],
     ) -> List[Dict[str, Any]]:
-        """Executes multiple SQL statements in a single batch request.
-
-        Statements can be list of (sql, params) tuples or dicts {'sql': ..., 'params': ...}.
-        Returns list of result objects for each statement.
-        """
+        """Executes multiple SQL statements in a batch request, with sequential fallback if array body is rejected."""
         if not statements:
             return []
 
@@ -191,9 +187,18 @@ class D1Client:
             else:
                 raise ValueError("Statements must be (sql, params) tuples or {'sql': ..., 'params': ...} dicts")
 
-        data = self._send_with_retry(formatted)
-        result_list = data.get("result", [])
-        return result_list
+        try:
+            data = self._send_with_retry(formatted)
+            result_list = data.get("result", [])
+            return result_list
+        except D1QueryError as q_err:
+            # If Cloudflare REST API rejects array payload (e.g. Expected object, received array),
+            # fall back to executing sequentially via execute()
+            results: List[Dict[str, Any]] = []
+            for item in formatted:
+                res = self.execute(item["sql"], item["params"])
+                results.append(res)
+            return results
 
 
 _d1_singleton: Optional[D1Client] = None

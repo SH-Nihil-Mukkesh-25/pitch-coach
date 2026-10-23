@@ -215,3 +215,54 @@ def test_slide_design_critique_schema():
     )
     assert coaching.too_much_text is True
     assert coaching.visual_hierarchy_rating == "poor"
+
+
+def test_story_arc_hackathon_audience():
+    """Verify that a hackathon technical deck is not penalized for missing funding ask or investor traction."""
+    slides = [
+        SlideVisionDescription(
+            slide_number=1,
+            title="The Problem: Heavy Cloud Datacenter Costs",
+            main_message="Cloud servers are expensive and have high latency for local edge devices.",
+        ),
+        SlideVisionDescription(
+            slide_number=2,
+            title="System Architecture: STM32 + ESP8266",
+            main_message="Hardware pipeline with USART2 at 115200 baud and SPI microSD.",
+            visible_text="Bare-metal CMSIS drivers with zero HAL overhead.",
+        ),
+        SlideVisionDescription(
+            slide_number=3,
+            title="Working Prototype & Live Benchmarks",
+            main_message="Tested 100% request throughput and under 128KB RAM footprint.",
+        ),
+        SlideVisionDescription(
+            slide_number=4,
+            title="Roadmap & Next Steps",
+            main_message="Adding encrypted payload support and Bluetooth LE fallback.",
+        ),
+    ]
+
+    summary = DeckSummary(
+        story_arc="Strong technical hardware build.",
+        missing_sections=[],
+        overall_score=85,
+        top_3_fixes=[],
+        has_problem=False,
+        has_solution=False,
+        has_traction=False,
+        has_ask=False,
+        missing_pillars=[],
+        story_arc_warnings=[],
+    )
+
+    audited = audit_deck_story_arc(slides, summary, audience="hackathon_judges")
+
+    assert audited.has_problem is True
+    assert audited.has_solution is True
+    assert audited.has_traction is True  # Benchmarks / working prototype counted as traction
+    assert audited.has_ask is True       # Roadmap / next steps counted as ask
+    assert len(audited.missing_pillars) == 0
+    # Crucially, must not contain generic investor funding ask warning
+    assert not any("funding" in w.lower() for w in audited.story_arc_warnings)
+    assert not any("Missing Ask Slide" in w for w in audited.story_arc_warnings)

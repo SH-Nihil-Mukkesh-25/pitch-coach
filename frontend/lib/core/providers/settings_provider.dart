@@ -270,18 +270,11 @@ class SettingsProvider extends ChangeNotifier {
 
   /// Optimistically update theme mode and sync
   Future<bool> setThemeMode(ThemeMode mode) async {
-    final previous = _themeMode;
     _themeMode = mode;
     notifyListeners();
     await _saveToPrefs();
 
-    return _syncToBackend(
-      rollback: () {
-        _themeMode = previous;
-        _saveToPrefs();
-        notifyListeners();
-      },
-    );
+    return _syncToBackend();
   }
 
   /// Toggle dark mode helper (used by ThemeToggleButton)
@@ -465,8 +458,10 @@ class SettingsProvider extends ChangeNotifier {
     );
   }
 
-  /// Internal sync helper
-  Future<bool> _syncToBackend({required VoidCallback rollback}) async {
+  /// Internal sync helper — syncs settings optimistically to backend.
+  /// If the backend is unreachable or offline, the changes are preserved locally
+  /// in SharedPreferences without rolling back the user's selected preferences.
+  Future<bool> _syncToBackend({VoidCallback? rollback}) async {
     _syncError = null;
     bool hasTokens = false;
     try {
@@ -485,20 +480,29 @@ class SettingsProvider extends ChangeNotifier {
 
     try {
       await _auth
-          .updateMe({'settings': toMap()})
+          .updateMe({
+            'dark_mode': _themeMode == ThemeMode.dark,
+            'settings': toMap(),
+          })
           .timeout(const Duration(seconds: 3));
       return true;
     } catch (e) {
       _syncError = 'Could not sync settings to cloud. Changes kept locally.';
-      rollback();
+      debugPrint('[SettingsProvider] $_syncError: $e');
+      // Offline-first: Never roll back local user preferences on cloud sync error
       return false;
     }
   }
 
-  /// Completely wipes all settings stored in SharedPreferences and resets state to defaults.
-  Future<void> clearAllSettings() async {
+  /// Wipes settings stored in SharedPreferences and resets state to defaults.
+  /// Preserves the user's theme selection by default so account operations
+  /// do not unexpectedly flip the visual appearance from light to dark mode.
+  Future<void> clearAllSettings({bool preserveTheme = true}) async {
     _prefs ??= await SharedPreferences.getInstance();
-    await _prefs!.remove(_keyThemeMode);
+    if (!preserveTheme) {
+      await _prefs!.remove(_keyThemeMode);
+      _themeMode = ThemeMode.system;
+    }
     await _prefs!.remove(_keyLocale);
     await _prefs!.remove(_keyDailyReminder);
     await _prefs!.remove(_keySlideDeckReady);
@@ -515,7 +519,6 @@ class SettingsProvider extends ChangeNotifier {
     await _prefs!.remove(_keyQuietHoursStart);
     await _prefs!.remove(_keyQuietHoursEnd);
 
-    _themeMode = ThemeMode.system;
     _locale = 'en';
     _dailyReminder = true;
     _slideDeckReadyAlerts = true;

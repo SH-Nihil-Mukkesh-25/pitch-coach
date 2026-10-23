@@ -285,18 +285,30 @@ class UserCubit extends Cubit<UserState> {
 
   Future<bool> deleteAccount() async {
     emit(state.copyWith(isLoading: true));
+    final userId = state.user.id;
+    bool backendSuccess = true;
     try {
-      final userId = state.user.id;
       if (!state.isGuest && await _authRepo.hasStoredTokens) {
-        await _authRepo.deleteAccount();
+        try {
+          await _authRepo.deleteAccount();
+        } catch (be) {
+          backendSuccess = false;
+        }
       }
       await LocalDatabaseService.instance.wipeAllLocalDatabases(userId);
       await UploadQueueService.instance.clearQueue();
       await SessionRepository.instance.clearAllLocalAudioFiles();
       await const FlutterSecureStorage().deleteAll();
       await logout();
-      return true;
+      return backendSuccess;
     } catch (e) {
+      try {
+        await LocalDatabaseService.instance.wipeAllLocalDatabases(userId);
+        await UploadQueueService.instance.clearQueue();
+        await SessionRepository.instance.clearAllLocalAudioFiles();
+        await const FlutterSecureStorage().deleteAll();
+        await logout();
+      } catch (_) {}
       emit(state.copyWith(isLoading: false, errorMessage: e.toString()));
       return false;
     }

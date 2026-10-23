@@ -8,8 +8,7 @@ import logging
 from typing import Any, Dict, List, Optional, Tuple
 
 from d1.d1_client import get_d1_client
-from firestore import get_db
-from models import SESSIONS_COL, USERS_COL
+from database.mongodb import get_db, SESSIONS_COL, USERS_COL
 from practice_plan.schemas import (
     MetricDiagnosis,
     PracticeDrill,
@@ -75,28 +74,20 @@ def _fetch_last_n_sessions(
     except Exception as exc:
         logger.debug("[PracticePlan] D1 query fallback to Firestore: %s", exc)
 
-    # 2. Firestore fallback
+    # 2. MongoDB fallback
     try:
-        firestore_db = db or get_db()
-        docs = (
-            firestore_db.collection(SESSIONS_COL)
-            .where("user_id", "==", user_id)
-            .where("is_analyzed", "==", True)
-            .stream()
+        mongo_db = db or get_db()
+        cursor = (
+            mongo_db[SESSIONS_COL]
+            .find({"user_id": user_id, "is_analyzed": True})
+            .sort("created_at", -1)
+            .limit(n_sessions)
         )
-        for doc in docs:
-            data = doc.to_dict() or {}
-            data["id"] = doc.id
-            sessions.append(data)
-
-        # Sort by created_at descending
-        sessions.sort(
-            key=lambda x: str(x.get("created_at", "")),
-            reverse=True,
-        )
-        return sessions[:n_sessions]
+        for doc in cursor:
+            sessions.append(doc)
+        return sessions
     except Exception as exc:
-        logger.warning("[PracticePlan] Firestore query error: %s", exc)
+        logger.warning("[PracticePlan] MongoDB query error: %s", exc)
         return []
 
 
@@ -398,11 +389,11 @@ def get_practice_plan(
         drills = _generate_targeted_drills(diagnosis)
         is_default = False
 
-    # Fetch user's recorded completed drills from Firestore
-    firestore_db = db or get_db()
+    # Fetch user's recorded completed drills from MongoDB
+    mongo_db = db or get_db()
     completed_drill_ids = set()
     try:
-        user_doc = firestore_db.collection(USERS_COL).document(user_id).get()
+        user_doc = mongo_db.collection(USERS_COL).document(user_id).get()
         if user_doc.exists:
             user_data = user_doc.to_dict() or {}
             completed_drill_ids = set(user_data.get("completed_drills", []))
@@ -419,7 +410,7 @@ def get_practice_plan(
             drill.is_completed = True
             # Persist completion
             try:
-                firestore_db.collection(USERS_COL).document(user_id).update({
+                mongo_db.collection(USERS_COL).document(user_id).update({
                     "completed_drills": list(completed_drill_ids | {drill.id})
                 })
             except Exception:
@@ -439,9 +430,9 @@ def mark_drill_completed(
     db=None,
 ) -> bool:
     """Explicitly marks a practice drill complete for user."""
-    firestore_db = db or get_db()
+    mongo_db = db or get_db()
     try:
-        user_ref = firestore_db.collection(USERS_COL).document(user_id)
+        user_ref = mongo_db.collection(USERS_COL).document(user_id)
         doc = user_ref.get()
         current = set(doc.to_dict().get("completed_drills", [])) if doc.exists else set()
         current.add(drill_id)

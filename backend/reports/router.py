@@ -4,11 +4,10 @@ import logging
 from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException, Response
-from google.cloud import firestore as fs
 
 from auth.dependencies import get_current_user
-from firestore import get_db
-from models import PracticeSession, SESSIONS_COL, User
+from database.mongodb import get_db, MongoDatabaseWrapper, SESSIONS_COL
+from models import PracticeSession, User
 from reports.service import generate_session_pdf_report, generate_weekly_pdf_report
 
 logger = logging.getLogger(__name__)
@@ -20,7 +19,7 @@ router = APIRouter(prefix="/reports", tags=["reports"])
 def get_session_pdf_report(
     session_id: str,
     current_user: User = Depends(get_current_user),
-    db: fs.Client = Depends(get_db),
+    db: MongoDatabaseWrapper = Depends(get_db),
 ):
     """Generates and downloads a branded PDF report for a completed session."""
     doc = db.collection(SESSIONS_COL).document(session_id).get()
@@ -54,7 +53,7 @@ def get_session_pdf_report(
 @router.get("/weekly/pdf")
 def get_weekly_pdf_report(
     current_user: User = Depends(get_current_user),
-    db: fs.Client = Depends(get_db),
+    db: MongoDatabaseWrapper = Depends(get_db),
 ):
     """Generates and downloads a weekly rehearsal summary PDF report."""
     user_id = current_user.id

@@ -6,17 +6,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from fastapi.responses import FileResponse
-from google.cloud import firestore as fs
 
 from auth.dependencies import get_current_user
-from firestore import get_db
-from models import (
-    User,
-    USERS_COL,
-    SESSIONS_COL,
-    ACHIEVEMENTS_COL,
-    SLIDE_DECKS_COL,
-)
+from database.mongodb import get_db, MongoDatabaseWrapper, USERS_COL
+from models import User
 from schemas import UpdateProfileRequest, UserResponse
 
 router = APIRouter(prefix="/users", tags=["users"])
@@ -54,7 +47,7 @@ def get_me(current_user: User = Depends(get_current_user)):
 def update_me(
     req: UpdateProfileRequest,
     current_user: User = Depends(get_current_user),
-    db: fs.Client = Depends(get_db),
+    db: MongoDatabaseWrapper = Depends(get_db),
 ):
     updates = req.model_dump(exclude_none=True)
     if updates:
@@ -68,7 +61,7 @@ def update_me(
 async def upload_avatar(
     file: UploadFile = File(...),
     current_user: User = Depends(get_current_user),
-    db: fs.Client = Depends(get_db),
+    db: MongoDatabaseWrapper = Depends(get_db),
 ):
     ext = Path(file.filename or "").suffix.lower()
     if ext not in ALLOWED_AVATAR_EXTENSIONS:
@@ -108,7 +101,7 @@ def get_avatar_file(filename: str):
 @router.delete("/me")
 def delete_account(
     current_user: User = Depends(get_current_user),
-    db: fs.Client = Depends(get_db),
+    db: MongoDatabaseWrapper = Depends(get_db),
 ):
     """Permanently delete user account and cascade delete associated records."""
     from auth.account_service import delete_user_account
@@ -121,4 +114,3 @@ def delete_account(
         "user_id": user_id,
         **results,
     }
-

@@ -4,16 +4,14 @@ from datetime import datetime, timedelta, timezone
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from google.cloud import firestore as fs
-
 from achievements.challenges import (
     evaluate_user_challenges,
     get_current_week_id,
 )
 from achievements.leaderboard import get_weekly_leaderboard
 from auth.dependencies import get_current_user
-from firestore import get_db
-from models import Achievement, PracticeSession, User, SESSIONS_COL, ACHIEVEMENTS_COL, USERS_COL
+from database.mongodb import get_db, MongoDatabaseWrapper, SESSIONS_COL, ACHIEVEMENTS_COL, USERS_COL
+from models import Achievement, PracticeSession, User
 from schemas import (
     AchievementResponse,
     ChallengeResponse,
@@ -87,7 +85,7 @@ ACHIEVEMENT_DEFS: List[dict] = [
 @router.get("", response_model=List[AchievementResponse])
 def get_achievements(
     current_user: User = Depends(get_current_user),
-    db: fs.Client = Depends(get_db),
+    db: MongoDatabaseWrapper = Depends(get_db),
 ):
     # Evaluate and persist any newly eligible unlocks in D1 / Firestore
     from achievements.service import evaluate_user_achievements
@@ -149,7 +147,7 @@ def get_achievements(
 @router.get("/challenges", response_model=List[ChallengeResponse])
 def get_challenges(
     current_user: User = Depends(get_current_user),
-    db: fs.Client = Depends(get_db),
+    db: MongoDatabaseWrapper = Depends(get_db),
 ):
     """Returns rotating weekly challenges with user's progress and claim status."""
     week_id = get_current_week_id()
@@ -168,7 +166,7 @@ def get_challenges(
 def claim_challenge(
     challenge_id: str,
     current_user: User = Depends(get_current_user),
-    db: fs.Client = Depends(get_db),
+    db: MongoDatabaseWrapper = Depends(get_db),
 ):
     """Claims reward XP for a completed weekly challenge."""
     week_id = get_current_week_id()
@@ -229,7 +227,7 @@ def claim_challenge(
 def get_leaderboard(
     opt_in: Optional[bool] = Query(None, description="Toggle leaderboard opt-in preference"),
     current_user: User = Depends(get_current_user),
-    db: fs.Client = Depends(get_db),
+    db: MongoDatabaseWrapper = Depends(get_db),
 ):
     """Returns privacy-preserving weekly leaderboard, with optional opt-in toggle."""
     if opt_in is not None:

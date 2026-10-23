@@ -37,6 +37,7 @@ class DeckSummary(BaseModel):
     has_ask: bool = False
     missing_pillars: List[str] = Field(default_factory=list)
     story_arc_warnings: List[str] = Field(default_factory=list)
+    audience: Optional[str] = "investors"
 
 
 class SlideCoaching(BaseModel):
@@ -57,6 +58,10 @@ class SlideCoaching(BaseModel):
     missing_cta: bool = False
     visual_hierarchy_rating: str = "good"
     design_critique: List[str] = Field(default_factory=list)
+    audience_tip: Optional[str] = None
+    what_to_emphasize: Optional[str] = None
+    what_to_avoid: Optional[str] = None
+    delivery_pacing: Optional[str] = None
 
 
 class DeckCoachingResult(BaseModel):

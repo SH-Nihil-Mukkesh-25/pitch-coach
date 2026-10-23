@@ -10,8 +10,8 @@ from typing import Dict, List, Optional
 import uuid
 
 from d1.d1_client import get_d1_client
-from firestore import get_db
-from models import Achievement, PracticeSession, SESSIONS_COL, ACHIEVEMENTS_COL
+from database.mongodb import get_db, SESSIONS_COL, ACHIEVEMENTS_COL
+from models import Achievement, PracticeSession
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +29,7 @@ def evaluate_user_achievements(
         return []
 
     d1 = d1_client or get_d1_client()
-    firestore_db = db or get_db()
+    mongo_db = db or get_db()
     newly_unlocked: List[str] = []
     now_iso = datetime.now(timezone.utc).isoformat()
 
@@ -112,8 +112,8 @@ def evaluate_user_achievements(
                 d1.batch(upsert_stmts)
                 logger.info("[achievements] Unlocked %s for user %s in D1.", newly_unlocked, user_id)
 
-                # Also sync to Firestore for consistency
-                if firestore_db:
+                # Also sync to MongoDB for consistency
+                if mongo_db:
                     for key in newly_unlocked:
                         ach = Achievement(
                             id=str(uuid.uuid4()),
@@ -122,17 +122,17 @@ def evaluate_user_achievements(
                             unlocked_at=datetime.now(timezone.utc),
                             criteria_met={"d1_evaluated": True},
                         )
-                        firestore_db.collection(ACHIEVEMENTS_COL).document(ach.id).set(ach.to_dict())
+                        mongo_db.collection(ACHIEVEMENTS_COL).document(ach.id).set(ach.to_dict())
 
             return newly_unlocked
 
         except Exception as exc:
-            logger.warning("[achievements] D1 evaluation failed: %s. Falling back to Firestore evaluation.", exc)
+            logger.warning("[achievements] D1 evaluation failed: %s. Falling back to MongoDB evaluation.", exc)
 
-    # Fallback to Firestore evaluation if D1 is not configured or failed
+    # Fallback to MongoDB evaluation if D1 is not configured or failed
     try:
         session_docs = (
-            firestore_db.collection(SESSIONS_COL)
+            mongo_db.collection(SESSIONS_COL)
             .where("user_id", "==", user_id)
             .where("is_analyzed", "==", True)
             .get()
@@ -141,7 +141,7 @@ def evaluate_user_achievements(
         sessions = [s for s in sessions if not s.analysis_failed]
 
         ach_docs = (
-            firestore_db.collection(ACHIEVEMENTS_COL)
+            mongo_db.collection(ACHIEVEMENTS_COL)
             .where("user_id", "==", user_id)
             .get()
         )
@@ -180,10 +180,10 @@ def evaluate_user_achievements(
                 unlocked_at=datetime.now(timezone.utc),
                 criteria_met={"session_count": len(sessions)},
             )
-            firestore_db.collection(ACHIEVEMENTS_COL).document(ach.id).set(ach.to_dict())
+            mongo_db.collection(ACHIEVEMENTS_COL).document(ach.id).set(ach.to_dict())
 
         return newly_unlocked
 
     except Exception as exc:
-        logger.error("[achievements] Firestore evaluation fallback error: %s", exc)
+        logger.error("[achievements] MongoDB evaluation fallback error: %s", exc)
         return []

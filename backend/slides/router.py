@@ -93,7 +93,10 @@ def _run_deck_pipeline(
         deck_store.save(deck)
 
         # Upload slide images to Firebase Storage if configured
-        deck_store.upload_slide_images_to_storage(deck_id, image_paths)
+        try:
+            deck_store.upload_slide_images_to_storage(deck_id, image_paths)
+        except Exception as upload_err:
+            logger.warning("Optional slide image storage upload failed for %s: %s", deck_id, upload_err)
 
         # ── Stage B: Vision Extraction ──
         deck.stage = "reading_slides"
@@ -300,8 +303,8 @@ def list_user_decks(
                 page_count=deck.page_count,
                 deck_summary=summary_obj,
                 slides=slides_objs,
-                created_at=deck.created_at.isoformat(),
-                updated_at=deck.updated_at.isoformat(),
+                created_at=deck.created_at.isoformat() if hasattr(deck.created_at, "isoformat") else str(deck.created_at),
+                updated_at=deck.updated_at.isoformat() if hasattr(deck.updated_at, "isoformat") else str(deck.updated_at),
             )
         )
     return results
@@ -398,8 +401,8 @@ def get_deck_details(
         page_count=deck.page_count,
         deck_summary=summary_obj,
         slides=slides_objs,
-        created_at=deck.created_at.isoformat(),
-        updated_at=deck.updated_at.isoformat(),
+        created_at=deck.created_at.isoformat() if hasattr(deck.created_at, "isoformat") else str(deck.created_at),
+        updated_at=deck.updated_at.isoformat() if hasattr(deck.updated_at, "isoformat") else str(deck.updated_at),
     )
 
 
@@ -537,7 +540,7 @@ async def rehearse_deck(
             **report,
         }
 
-        # 4. Save to deck rehearsals list & persist in Firestore
+        # 4. Save to deck rehearsals list & persist in MongoDB
         deck.rehearsals.append(report_record)
         deck_store.save(deck)
 

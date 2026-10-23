@@ -590,20 +590,33 @@ class UserProvider extends ChangeNotifier {
 
   Future<bool> deleteAccount() async {
     _setLoading(true);
+    final userId = _user.id;
+    bool backendSuccess = true;
     try {
-      final userId = _user.id;
       if (!_user.isGuest && await _auth.hasStoredTokens) {
-        await _auth.deleteAccount();
+        try {
+          await _auth.deleteAccount();
+        } catch (be) {
+          backendSuccess = false;
+          debugPrint('[UserProvider] Backend account deletion notice (proceeding with full local wipe): $be');
+        }
       }
       // Purge all local user databases (both user and guest)
       await LocalDatabaseService.instance.wipeAllLocalDatabases(userId);
       // Purge offline queue and staged audio files
       await UploadQueueService.instance.clearQueue();
-      // Purge all local recordings and session audio files
+      // Purge all local recordings, session audio files, and in-memory session caches
       await SessionRepository.instance.clearAllLocalAudioFiles();
       await logout();
-      return true;
+      return backendSuccess;
     } catch (e) {
+      // Guarantee local wipe and logout even in case of an unexpected error
+      try {
+        await LocalDatabaseService.instance.wipeAllLocalDatabases(userId);
+        await UploadQueueService.instance.clearQueue();
+        await SessionRepository.instance.clearAllLocalAudioFiles();
+        await logout();
+      } catch (_) {}
       _error = _extractErrorMessage(e);
       notifyListeners();
       return false;

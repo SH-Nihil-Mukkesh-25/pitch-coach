@@ -26,6 +26,10 @@ class Settings(BaseSettings):
     CF_D1_DATABASE_ID: str = ""
     CF_API_TOKEN: str = ""
 
+    # MongoDB (Document storage: users, sessions, slide_decks, achievements, quotas)
+    MONGODB_URI: str = "mongodb://localhost:27017"
+    MONGODB_DB_NAME: str = "pitch_coach"
+
     @property
     def allowed_origins_list(self) -> List[str]:
         return [o.strip() for o in self.ALLOWED_ORIGINS.split(",") if o.strip()]

@@ -1,8 +1,9 @@
-"""Daily quota management using Firestore user_quotas collection."""
+"""Daily quota management using MongoDB user_quotas collection."""
 import logging
 from datetime import datetime, timezone
 from fastapi import HTTPException, status
-from firestore import get_db
+from pymongo import ReturnDocument
+from database.mongodb import USER_QUOTAS_COL, get_mongo_db, get_db
 
 logger = logging.getLogger(__name__)
 
@@ -18,14 +19,15 @@ def check_and_increment_daily_quota(user_id: str, feature: str, limit: int) -> i
     today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     doc_id = f"{user_id}_{feature}_{today_str}"
 
-    db = get_db()
+    db = get_mongo_db()
     if db is None:
         return 0
 
     try:
-        doc_ref = db.collection("user_quotas").document(doc_id)
-        doc = doc_ref.get()
-        current_count = doc.to_dict().get("count", 0) if doc.exists else 0
+        col = db[USER_QUOTAS_COL]
+        # Check current count first
+        doc = col.find_one({"doc_id": doc_id})
+        current_count = int(doc.get("count", 0)) if doc else 0
 
         if current_count >= limit:
             raise HTTPException(
@@ -33,15 +35,25 @@ def check_and_increment_daily_quota(user_id: str, feature: str, limit: int) -> i
                 detail=f"Daily quota exceeded: you have reached the maximum of {limit} {feature} per day.",
             )
 
-        new_count = current_count + 1
-        doc_ref.set({
-            "user_id": user_id,
-            "feature": feature,
-            "date": today_str,
-            "count": new_count,
-            "updated_at": datetime.now(timezone.utc),
-        })
-        return new_count
+        updated = col.find_one_and_update(
+            {"doc_id": doc_id},
+            {
+                "$inc": {"count": 1},
+                "$setOnInsert": {
+                    "doc_id": doc_id,
+                    "id": doc_id,
+                    "user_id": user_id,
+                    "feature": feature,
+                    "date": today_str,
+                },
+                "$set": {
+                    "updated_at": datetime.now(timezone.utc),
+                },
+            },
+            upsert=True,
+            return_document=ReturnDocument.AFTER,
+        )
+        return int(updated.get("count", current_count + 1)) if updated else current_count + 1
     except HTTPException:
         raise
     except Exception as exc:

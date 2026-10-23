@@ -11,12 +11,11 @@ import logging
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, Query
-from google.cloud import firestore as fs
 
 from auth.dependencies import get_current_user
 from d1.d1_client import D1Error, get_d1_client
-from firestore import get_db
-from models import PracticeSession, User, SESSIONS_COL
+from database.mongodb import get_db, MongoDatabaseWrapper, SESSIONS_COL
+from models import PracticeSession, User
 from schemas import SkillBreakdown, StatsSummary, StreakResponse, TrendPoint
 
 logger = logging.getLogger(__name__)
@@ -98,7 +97,7 @@ def get_summary(
     days: Optional[int] = Query(None, ge=1, le=365),
     tz_offset_minutes: int = Query(330, description="User timezone offset in minutes (default +330 IST)"),
     current_user: User = Depends(get_current_user),
-    db: fs.Client = Depends(get_db),
+    db: MongoDatabaseWrapper = Depends(get_db),
 ):
     """Returns summary stats for dashboard reading from D1 with Firestore fallback."""
     d1 = get_d1_client()
@@ -222,7 +221,7 @@ def get_summary(
 
         # Streak fallback: query recent bounded sessions (up to 30) for local dates
         recent_docs = (
-            query.order_by("created_at", direction=fs.Query.DESCENDING)
+            query.order_by("created_at", direction="DESC")
             .limit(30)
             .get()
         )
@@ -266,7 +265,7 @@ def get_trend(
     range: str = Query("week", enum=["week", "month"]),
     tz_offset_minutes: int = Query(330, description="User timezone offset in minutes"),
     current_user: User = Depends(get_current_user),
-    db: fs.Client = Depends(get_db),
+    db: MongoDatabaseWrapper = Depends(get_db),
 ):
     """Returns trend chart points grouped by user's local_date."""
     days = 7 if range == "week" else 30
@@ -347,7 +346,7 @@ def get_trend(
 def get_streak(
     tz_offset_minutes: int = Query(330, description="User timezone offset in minutes"),
     current_user: User = Depends(get_current_user),
-    db: fs.Client = Depends(get_db),
+    db: MongoDatabaseWrapper = Depends(get_db),
 ):
     """Calculates active streak using D1 gaps-and-islands grouped by local_date."""
     d1 = get_d1_client()
@@ -381,7 +380,7 @@ def get_streak(
             db.collection(SESSIONS_COL)
             .where("user_id", "==", current_user.id)
             .where("is_analyzed", "==", True)
-            .order_by("created_at", direction=fs.Query.DESCENDING)
+            .order_by("created_at", direction="DESC")
             .limit(30)
             .get()
         )
@@ -404,7 +403,7 @@ def get_streak(
 def get_skills(
     limit: int = Query(20, ge=1, le=100),
     current_user: User = Depends(get_current_user),
-    db: fs.Client = Depends(get_db),
+    db: MongoDatabaseWrapper = Depends(get_db),
 ):
     """Returns skill breakdown averages."""
     d1 = get_d1_client()
@@ -448,7 +447,7 @@ def get_skills(
             db.collection(SESSIONS_COL)
             .where("user_id", "==", current_user.id)
             .where("is_analyzed", "==", True)
-            .order_by("created_at", direction=fs.Query.DESCENDING)
+            .order_by("created_at", direction="DESC")
             .limit(limit)
             .get()
         )

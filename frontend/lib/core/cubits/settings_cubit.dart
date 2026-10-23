@@ -277,10 +277,15 @@ class SettingsCubit extends Cubit<SettingsState> {
     }
   }
 
-  /// Completely wipes all settings from SharedPreferences and resets state to default.
-  Future<void> clearAllSettings() async {
+  /// Wipes settings from SharedPreferences and resets state to default.
+  /// Preserves the user's theme selection by default so account operations
+  /// do not unexpectedly flip the visual appearance from light to dark mode.
+  Future<void> clearAllSettings({bool preserveTheme = true}) async {
     _prefs ??= await SharedPreferences.getInstance();
-    await _prefs!.remove(keyThemeMode);
+    final themeToKeep = preserveTheme ? state.themeMode : ThemeMode.system;
+    if (!preserveTheme) {
+      await _prefs!.remove(keyThemeMode);
+    }
     await _prefs!.remove(keyLocale);
     await _prefs!.remove(keyDailyReminder);
     await _prefs!.remove(keySlideDeckReady);
@@ -291,6 +296,8 @@ class SettingsCubit extends Cubit<SettingsState> {
     await _prefs!.remove(keyReminderDays);
     await _prefs!.remove(keyWeeklyGoal);
 
-    emit(const SettingsState());
+    emit(SettingsState(
+      themeMode: themeToKeep,
+    ));
   }
 }

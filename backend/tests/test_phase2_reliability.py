@@ -16,24 +16,21 @@ class TestPhase2Reliability(unittest.TestCase):
     def test_quota_increment_and_limit_enforcement(self):
         """Verify check_and_increment_daily_quota enforces limits and throws 429."""
         mock_db = MagicMock()
-        mock_doc_ref = MagicMock()
-        mock_doc = MagicMock()
-
-        mock_db.collection.return_value.document.return_value = mock_doc_ref
-        mock_doc_ref.get.return_value = mock_doc
+        mock_col = MagicMock()
+        mock_db.__getitem__.return_value = mock_col
 
         # Test within limit: count is 5, limit is 10 -> increments to 6
-        mock_doc.exists = True
-        mock_doc.to_dict.return_value = {"count": 5}
+        mock_col.find_one.return_value = {"count": 5}
+        mock_col.find_one_and_update.return_value = {"count": 6}
 
-        with patch("quota.get_db", return_value=mock_db):
+        with patch("quota.get_mongo_db", return_value=mock_db):
             new_count = check_and_increment_daily_quota("user_123", "decks", limit=10)
             self.assertEqual(new_count, 6)
-            mock_doc_ref.set.assert_called_once()
+            mock_col.find_one_and_update.assert_called_once()
 
         # Test limit reached: count is 10, limit is 10 -> raises 429
-        mock_doc.to_dict.return_value = {"count": 10}
-        with patch("quota.get_db", return_value=mock_db):
+        mock_col.find_one.return_value = {"count": 10}
+        with patch("quota.get_mongo_db", return_value=mock_db):
             with self.assertRaises(HTTPException) as ctx:
                 check_and_increment_daily_quota("user_123", "decks", limit=10)
             self.assertEqual(ctx.exception.status_code, 429)
@@ -65,8 +62,8 @@ class TestPhase2Reliability(unittest.TestCase):
     def test_deck_store_lru_cache_bounds(self):
         """Verify DeckStore._memory_cache stays bounded to 100 entries."""
         store = DeckStore()
-        # Mock get_db so save doesn't require firebase
-        with patch("slides.store.get_db", return_value=None):
+        # Mock get_mongo_db so save doesn't require database
+        with patch("slides.store.get_mongo_db", return_value=None):
             for i in range(120):
                 d = SlideDeck(id=f"deck_{i}", user_id="user_1")
                 store.save(d)
@@ -89,7 +86,7 @@ class TestPhase2Reliability(unittest.TestCase):
         )
         store._memory_cache[stuck_deck.id] = stuck_deck
 
-        with patch("slides.store.get_db", return_value=None):
+        with patch("slides.store.get_mongo_db", return_value=None):
             count = store.sweep_stuck_decks(cutoff_seconds=600)
             self.assertEqual(count, 1)
             self.assertEqual(stuck_deck.status, "failed")

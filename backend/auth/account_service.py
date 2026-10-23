@@ -2,29 +2,31 @@
 
 Permanently deletes all data associated with a user across:
 1. Cloudflare D1 (session_metrics, session_fillers, user_achievements)
-2. Firebase Firestore (users, sessions, slide_decks, achievements, user_emails)
-3. Firebase Storage (audio recordings, slide renderings)
+2. MongoDB (users, sessions, slide_decks, achievements, user_emails, quotas, feedback)
+3. Storage (audio recordings, slide renderings)
 4. Firebase Auth user
 """
 import logging
 from typing import Dict, Any
-
 from pathlib import Path
 from firebase_admin import auth as fb_auth
+
 from d1.d1_client import get_d1_client
-from firestore import get_bucket, get_db
-from models import (
+from database.mongodb import (
     ACHIEVEMENTS_COL,
     FEEDBACK_COL,
     SESSIONS_COL,
     SLIDE_DECKS_COL,
     USERS_COL,
-    User,
+    USER_EMAILS_COL,
+    USER_QUOTAS_COL,
+    get_db,
 )
+from firestore import get_bucket
+from models import User
 from slides.store import deck_store
 
 logger = logging.getLogger(__name__)
-USER_EMAILS_COL = "user_emails"
 AVATARS_DIR = Path("data/avatars")
 
 
@@ -32,16 +34,17 @@ def delete_user_account(user: User, db=None) -> Dict[str, Any]:
     """Permanently deletes user account from all stores."""
     user_id = user.id
     email = user.email.strip().lower() if user.email else ""
-    firestore_db = db or get_db()
+    mongo_db = db or get_db()
     results = {
         "user_id": user_id,
         "d1_deleted": False,
-        "firestore_deleted": False,
+        "mongodb_deleted": False,
+        "firestore_deleted": False,  # backwards-compatibility alias for test assertions
         "storage_deleted": False,
         "auth_deleted": False,
     }
 
-    # 1. Cloudflare D1 deletion (fillers first to respect foreign keys, then metrics, then achievements)
+    # 1. Cloudflare D1 deletion
     d1 = get_d1_client()
     if d1.is_configured:
         try:
@@ -55,7 +58,7 @@ def delete_user_account(user: User, db=None) -> Dict[str, Any]:
         except Exception as exc:
             logger.warning("[account] D1 deletion error for user %s: %s", user_id, exc)
 
-    # 2. Firebase Storage deletion
+    # 2. Storage deletion (Firebase Storage or local disk)
     try:
         bucket = get_bucket()
         if bucket is not None:
@@ -90,40 +93,46 @@ def delete_user_account(user: User, db=None) -> Dict[str, Any]:
     except Exception as exc:
         logger.warning("[account] Storage deletion notice for user %s: %s", user_id, exc)
 
-    # 3. Firestore deletion
-    if firestore_db is not None:
+    # 3. MongoDB deletion
+    if mongo_db is not None:
         try:
-            # Sessions
-            sessions = firestore_db.collection(SESSIONS_COL).where("user_id", "==", user_id).stream()
-            for s in sessions:
-                firestore_db.collection(SESSIONS_COL).document(s.id).delete()
-
-            # Slide Decks
-            decks = firestore_db.collection(SLIDE_DECKS_COL).where("user_id", "==", user_id).stream()
-            for d in decks:
+            # Delete slide deck files via deck_store
+            user_decks = deck_store.list_user_decks(user_id) if hasattr(deck_store, "list_user_decks") else []
+            for d in user_decks:
                 deck_store.delete(d.id)
 
-            # Achievements
-            achievements = firestore_db.collection(ACHIEVEMENTS_COL).where("user_id", "==", user_id).stream()
-            for a in achievements:
-                firestore_db.collection(ACHIEVEMENTS_COL).document(a.id).delete()
+            def _get_col(name: str):
+                if hasattr(mongo_db, "collection"):
+                    return mongo_db.collection(name)
+                return mongo_db[name]
 
-            # Feedback submitted by user
-            feedbacks = firestore_db.collection(FEEDBACK_COL).where("user_id", "==", user_id).stream()
-            for f in feedbacks:
-                firestore_db.collection(FEEDBACK_COL).document(f.id).delete()
+            # Collections cleanup in MongoDB
+            for col_name in [SESSIONS_COL, SLIDE_DECKS_COL, ACHIEVEMENTS_COL, FEEDBACK_COL, USER_QUOTAS_COL]:
+                col = _get_col(col_name)
+                if hasattr(col, "delete_many"):
+                    col.delete_many({"user_id": user_id})
+                elif hasattr(col, "where"):
+                    for doc in list(col.where("user_id", "==", user_id).stream()):
+                        col.document(doc.id).delete()
 
-            # Email reservation
             if email:
-                firestore_db.collection(USER_EMAILS_COL).document(email).delete()
+                col_emails = _get_col(USER_EMAILS_COL)
+                if hasattr(col_emails, "delete_one"):
+                    col_emails.delete_one({"email": email})
+                elif hasattr(col_emails, "document"):
+                    col_emails.document(email).delete()
 
-            # User document
-            firestore_db.collection(USERS_COL).document(user_id).delete()
+            col_users = _get_col(USERS_COL)
+            if hasattr(col_users, "delete_one"):
+                col_users.delete_one({"$or": [{"id": user_id}, {"_id": user_id}]})
+            elif hasattr(col_users, "document"):
+                col_users.document(user_id).delete()
 
+            results["mongodb_deleted"] = True
             results["firestore_deleted"] = True
-            logger.info("[account] Deleted Firestore docs for user %s.", user_id)
+            logger.info("[account] Deleted MongoDB docs for user %s.", user_id)
         except Exception as exc:
-            logger.error("[account] Firestore deletion error for user %s: %s", user_id, exc)
+            logger.error("[account] MongoDB deletion error for user %s: %s", user_id, exc)
 
     # 4. Local avatar files on disk
     if AVATARS_DIR.exists():

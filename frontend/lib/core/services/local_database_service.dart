@@ -84,6 +84,31 @@ class LocalDatabaseService {
     }
   }
 
+  /// Truncates all tables in the given SQLite database.
+  Future<void> _truncateAllTables(Database targetDb) async {
+    try {
+      await targetDb.execute('PRAGMA foreign_keys = OFF;');
+      const tables = [
+        'session_fillers',
+        'session_metrics',
+        'user_achievements',
+        'achievement_catalog',
+        'sync_outbox',
+        'sync_state',
+      ];
+      for (final table in tables) {
+        try {
+          await targetDb.execute('DELETE FROM $table;');
+        } catch (_) {}
+      }
+      try {
+        await targetDb.execute('VACUUM;');
+      } catch (_) {}
+    } catch (e) {
+      debugPrint('[LocalDatabaseService] Notice during table truncation: $e');
+    }
+  }
+
   /// Permanently deletes the local SQLite database for the given user,
   /// removing all session metrics, fillers, achievements, sync outbox rows, and cursors.
   Future<void> wipeUserData(String userId) async {
@@ -92,18 +117,44 @@ class LocalDatabaseService {
         ? 'guest'
         : userId.replaceAll(RegExp(r'[^a-zA-Z0-9_-]'), '_');
 
+    // 1. If currently open for this user, truncate all data first, then close
     if (_db != null && _db!.isOpen) {
       if (_currentUserId == sanitizedUserId) {
+        await _truncateAllTables(_db!);
         await close();
       }
     }
 
     final dbPath = await _resolveDbPath('pitch_coach_$sanitizedUserId.db');
+
+    // 2. If the file exists on disk, open it to truncate all tables, then close
+    try {
+      final dbFile = File(dbPath);
+      if (await dbFile.exists()) {
+        try {
+          final tempDb = await openDatabase(dbPath);
+          await _truncateAllTables(tempDb);
+          await tempDb.close();
+        } catch (_) {}
+      }
+    } catch (_) {}
+
+    // 3. Delete database using sqflite's deleteDatabase
     try {
       await deleteDatabase(dbPath);
       debugPrint('[LocalDatabaseService] Successfully wiped local DB: $dbPath');
     } catch (e) {
       debugPrint('[LocalDatabaseService] Notice during deleteDatabase for $dbPath: $e');
+    }
+
+    // 4. Force delete database file and auxiliary files directly from disk
+    for (final ext in ['', '-journal', '-wal', '-shm']) {
+      try {
+        final f = File('$dbPath$ext');
+        if (await f.exists()) {
+          await f.delete();
+        }
+      } catch (_) {}
     }
 
     if (_currentUserId == sanitizedUserId) {
@@ -113,11 +164,20 @@ class LocalDatabaseService {
 
   /// Wipes all local SQLite databases (the user's DB and any guest DB).
   Future<void> wipeAllLocalDatabases(String userId) async {
-    await wipeUserData(userId);
-    await wipeUserData('guest');
-    await close();
+    // 1. If active db is open, truncate and close it
+    if (_db != null && _db!.isOpen) {
+      await _truncateAllTables(_db!);
+      await close();
+    }
     _currentUserId = null;
 
+    // 2. Wipe targeted user and guest databases
+    if (userId.isNotEmpty && userId != 'guest') {
+      await wipeUserData(userId);
+    }
+    await wipeUserData('guest');
+
+    // 3. Scan all possible database folders and delete ANY pitch_coach_*.db* files
     final foldersToCheck = <String>[];
     try {
       foldersToCheck.add(await getDatabasesPath());
@@ -125,6 +185,10 @@ class LocalDatabaseService {
     try {
       final docs = await getApplicationDocumentsDirectory();
       foldersToCheck.add(docs.path);
+    } catch (_) {}
+    try {
+      final support = await getApplicationSupportDirectory();
+      foldersToCheck.add(support.path);
     } catch (_) {}
 
     for (final folder in foldersToCheck) {
@@ -136,6 +200,16 @@ class LocalDatabaseService {
             if (entity is File) {
               final name = p.basename(entity.path);
               if (name.startsWith('pitch_coach_')) {
+                if (name.endsWith('.db')) {
+                  try {
+                    final tempDb = await openDatabase(entity.path);
+                    await _truncateAllTables(tempDb);
+                    await tempDb.close();
+                  } catch (_) {}
+                  try {
+                    await deleteDatabase(entity.path);
+                  } catch (_) {}
+                }
                 try {
                   await entity.delete();
                 } catch (_) {}

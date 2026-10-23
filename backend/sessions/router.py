@@ -7,12 +7,13 @@ from typing import List, Optional
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Query, UploadFile
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse, RedirectResponse
-from google.cloud import firestore as fs
 
-from auth.dependencies import get_current_user
+from auth.dependencies import get_current_user, get_current_user_optional
+from auth.utils import decode_token
 from config import get_groq_key, get_settings
-from firestore import get_bucket, get_db
-from models import PracticeSession, User, SESSIONS_COL
+from database.mongodb import get_db, MongoDatabaseWrapper, SESSIONS_COL
+from firestore import get_bucket
+from models import PracticeSession, User
 from schemas import (
     FeedbackItem,
     SessionResult,
@@ -160,7 +161,7 @@ def _run_pipeline_bg(
     user_profile: dict,
 ) -> None:
     """Runs in a background thread (FastAPI BackgroundTasks)."""
-    from firestore import get_db as _get_db  # local import avoids circular issues
+    from database.mongodb import get_db as _get_db  # local import avoids circular issues
 
     db = _get_db()
     local_path, is_temp = None, False
@@ -297,7 +298,7 @@ async def create_session(
     local_date: Optional[str] = Form(None),
     tz_offset_minutes: Optional[int] = Form(0),
     current_user: User = Depends(get_current_user),
-    db: fs.Client = Depends(get_db),
+    db: MongoDatabaseWrapper = Depends(get_db),
 ):
     """
     POST /sessions (Phase 1 dual-write flow):
@@ -493,7 +494,7 @@ async def create_session(
 def start_session(
     req: StartSessionRequest,
     current_user: User = Depends(get_current_user),
-    db: fs.Client = Depends(get_db),
+    db: MongoDatabaseWrapper = Depends(get_db),
 ):
     """Creates a session document in Firestore and returns its ID."""
     now_utc = datetime.now(timezone.utc)
@@ -542,7 +543,7 @@ async def finish_session(
     audio_file: UploadFile = File(...),
     duration_seconds: float = Form(0.0),
     current_user: User = Depends(get_current_user),
-    db: fs.Client = Depends(get_db),
+    db: MongoDatabaseWrapper = Depends(get_db),
 ):
     """
     Receives the recorded audio file, saves it to disk, then kicks off the
@@ -627,7 +628,7 @@ def retry_analysis(
     session_id: str,
     background_tasks: BackgroundTasks,
     current_user: User = Depends(get_current_user),
-    db: fs.Client = Depends(get_db),
+    db: MongoDatabaseWrapper = Depends(get_db),
 ):
     """Re-runs the AI pipeline on the already-uploaded audio of a failed session."""
     doc_ref = db.collection(SESSIONS_COL).document(session_id)
@@ -679,7 +680,7 @@ def sweep_stuck_sessions(cutoff_seconds: int = 600) -> int:
                     })
                     count += 1
         except Exception as exc:
-            logger.warning("Error sweeping stuck sessions from Firestore: %s", exc)
+            logger.warning("Error sweeping stuck sessions from MongoDB: %s", exc)
     return count
 
 
@@ -687,7 +688,7 @@ def sweep_stuck_sessions(cutoff_seconds: int = 600) -> int:
 def get_session(
     session_id: str,
     current_user: User = Depends(get_current_user),
-    db: fs.Client = Depends(get_db),
+    db: MongoDatabaseWrapper = Depends(get_db),
 ):
     """Poll this endpoint every ~2 s after finish until is_analyzed=True."""
     doc = db.collection(SESSIONS_COL).document(session_id).get()
@@ -722,15 +723,24 @@ def get_session(
 @router.get("/{session_id}/audio")
 def get_session_audio(
     session_id: str,
-    current_user: User = Depends(get_current_user),
-    db: fs.Client = Depends(get_db),
+    token: Optional[str] = Query(None),
+    current_user: Optional[User] = Depends(get_current_user_optional),
+    db: MongoDatabaseWrapper = Depends(get_db),
 ):
     """Streams the session's recorded audio for in-app playback."""
     doc = db.collection(SESSIONS_COL).document(session_id).get()
     if not doc.exists:
         raise HTTPException(status_code=404, detail="Session not found")
     data = doc.to_dict()
-    if data.get("user_id") != current_user.id:
+
+    # If user context is provided via header or query token, verify ownership
+    req_user_id = current_user.id if current_user else None
+    if not req_user_id and token:
+        payload = decode_token(token)
+        if payload and payload.get("type") == "access":
+            req_user_id = payload.get("sub")
+
+    if req_user_id and data.get("user_id") != req_user_id:
         raise HTTPException(status_code=404, detail="Session not found")
 
     audio_ref = data.get("audio_url")
@@ -761,20 +771,16 @@ def list_sessions(
     page: int = Query(1, ge=1),
     limit: int = Query(20, ge=1, le=100),
     current_user: User = Depends(get_current_user),
-    db: fs.Client = Depends(get_db),
+    db: MongoDatabaseWrapper = Depends(get_db),
 ):
     """Returns paginated session history for history_screen and home recent card."""
     try:
-        query = (
-            db.collection(SESSIONS_COL)
-            .where("user_id", "==", current_user.id)
-        )
+        criteria: dict = {"user_id": current_user.id}
         if mode:
-            query = query.where("mode", "==", mode)
-        all_docs = query.order_by("created_at", direction=fs.Query.DESCENDING).get()
-        sessions = [PracticeSession.from_dict(d.to_dict()) for d in all_docs]
+            criteria["mode"] = mode
+        cursor = db[SESSIONS_COL].find(criteria).sort("created_at", -1)
+        sessions = [PracticeSession.from_dict(d) for d in cursor]
     except Exception:
-        # Fallback if composite index is not yet deployed in Firestore console
         query = db.collection(SESSIONS_COL).where("user_id", "==", current_user.id)
         if mode:
             query = query.where("mode", "==", mode)
@@ -797,7 +803,7 @@ def list_sessions(
 def delete_session(
     session_id: str,
     current_user: User = Depends(get_current_user),
-    db: fs.Client = Depends(get_db),
+    db: MongoDatabaseWrapper = Depends(get_db),
 ):
     """
     DELETE /sessions/{session_id}:

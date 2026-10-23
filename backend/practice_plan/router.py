@@ -2,11 +2,10 @@
 FastAPI router for Personalized Practice Plan (Feature 6).
 """
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from google.cloud import firestore as fs
 
 from auth.dependencies import get_current_user
 from d1.d1_client import get_d1_client
-from firestore import get_db
+from database.mongodb import get_db, MongoDatabaseWrapper
 from limiter import limiter
 from models import User
 from practice_plan.schemas import (
@@ -27,7 +26,7 @@ router = APIRouter(prefix="/practice-plan", tags=["practice-plan"])
 def get_practice_plan_endpoint(
     request: Request,
     current_user: User = Depends(get_current_user),
-    db: fs.Client = Depends(get_db),
+    db: MongoDatabaseWrapper = Depends(get_db),
 ):
     """
     Analyzes last N sessions to detect weakest metric (WPM, fillers, pauses, or clarity)
@@ -53,7 +52,7 @@ def complete_drill_endpoint(
     request: Request,
     body: CompleteDrillRequest,
     current_user: User = Depends(get_current_user),
-    db: fs.Client = Depends(get_db),
+    db: MongoDatabaseWrapper = Depends(get_db),
 ):
     """Explicitly marks a drill as completed by the user."""
     ok = mark_drill_completed(user_id=current_user.id, drill_id=body.drill_id, db=db)

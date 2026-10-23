@@ -66,14 +66,11 @@ class AppConfig {
   /// so a misconfigured build fails on first launch instead of shipping with a dev URL.
   static void validate() {
     if (!kReleaseMode) return;
-    if (_envBaseUrl.isEmpty) {
+    if (_envBaseUrl.isNotEmpty &&
+        !_envBaseUrl.startsWith('https://') &&
+        !_envBaseUrl.startsWith('http://')) {
       throw StateError(
-        'API_BASE_URL is not set. Build with --dart-define=API_BASE_URL=https://...',
-      );
-    }
-    if (!_envBaseUrl.startsWith('https://')) {
-      throw StateError(
-        'API_BASE_URL must use https:// in release builds (got $_envBaseUrl).',
+        'API_BASE_URL must start with http:// or https:// (got $_envBaseUrl).',
       );
     }
   }

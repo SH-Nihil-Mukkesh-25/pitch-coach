@@ -31,13 +31,19 @@ settings = get_settings()
 app = FastAPI(
     title="Pitch Coach API",
     version="2.0.0",
-    description="Backend API for the Pitch Coach Flutter app — powered by Firebase Firestore.",
+    description="Backend API for the Pitch Coach Flutter app — powered by MongoDB & Cloudflare D1.",
 )
 
 
 @app.on_event("startup")
 async def on_startup():
     try:
+        from firestore import init_firebase
+        init_firebase()
+        from database.mongodb import get_mongo_db, init_db_indexes
+        db = get_mongo_db()
+        if db is not None:
+            init_db_indexes(db)
         swept_decks = deck_store.sweep_stuck_decks()
         swept_sessions = sweep_stuck_sessions()
         logger.info("Startup sweep: recovered %d stuck decks and %d stuck sessions", swept_decks, swept_sessions)
@@ -74,7 +80,7 @@ app.include_router(reports_router)
 
 @app.get("/health", tags=["health"])
 def health_check():
-    return {"status": "ok", "version": "2.0.0", "db": "firestore"}
+    return {"status": "ok", "version": "2.0.0", "db": "mongodb"}
 
 
 from auth.dependencies import get_current_user

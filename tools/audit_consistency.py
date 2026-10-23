@@ -35,6 +35,7 @@ logger = logging.getLogger("audit_consistency")
 def audit_consistency(
     uid: str,
     firestore_sessions: Optional[List[Dict[str, Any]]] = None,
+    mongo_sessions: Optional[List[Dict[str, Any]]] = None,
     d1_connection: Optional[Any] = None,
     sqlite_db_path_or_conn: Optional[Any] = None,
 ) -> Dict[str, Any]:
@@ -44,10 +45,12 @@ def audit_consistency(
     """
     report = {
         "user_id": uid,
+        "mongodb_count": 0,
         "firestore_count": 0,
         "d1_count": 0,
         "sqlite_count": 0,
         "missing_in_d1": [],
+        "missing_in_mongodb": [],
         "missing_in_firestore": [],
         "missing_in_sqlite": [],
         "metric_mismatches": [],
@@ -57,10 +60,22 @@ def audit_consistency(
         "discrepancy_count": 0,
     }
 
-    fs_docs = {s["id"]: s for s in (firestore_sessions or []) if s.get("user_id") == uid}
+    # Fetch from MongoDB if not provided directly
+    sessions_pool = mongo_sessions or firestore_sessions
+    if sessions_pool is None:
+        try:
+            from database.mongodb import get_mongo_db, SESSIONS_COL
+            db = get_mongo_db()
+            cursor = db[SESSIONS_COL].find({"user_id": uid})
+            sessions_pool = list(cursor)
+        except Exception:
+            sessions_pool = []
+
+    fs_docs = {s["id"]: s for s in (sessions_pool or []) if s.get("user_id") == uid}
+    report["mongodb_count"] = len(fs_docs)
     report["firestore_count"] = len(fs_docs)
 
-    # 1. Audit d1_pending in Firestore
+    # 1. Audit d1_pending in MongoDB / Firestore
     for sid, sdata in fs_docs.items():
         if sdata.get("d1_pending") is True:
             report["d1_pending_leftovers"].append(sid)

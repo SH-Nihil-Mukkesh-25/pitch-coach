@@ -10,8 +10,7 @@ import logging
 from typing import Any, Dict, List, Optional, Tuple
 
 from d1.d1_client import D1Client, get_d1_client
-from firestore import get_db
-from models import SESSIONS_COL
+from database.mongodb import get_db, SESSIONS_COL
 
 logger = logging.getLogger(__name__)
 
@@ -172,3 +171,7 @@ def retry_d1_sync(session_id: str) -> None:
     """Background task callback to retry syncing a pending session to D1."""
     logger.info("[d1] Running background retry for session %s...", session_id)
     sync_firestore_session_to_d1(session_id)
+
+
+# MongoDB migration alias
+sync_mongo_session_to_d1 = sync_firestore_session_to_d1

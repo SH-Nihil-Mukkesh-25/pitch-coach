@@ -1,11 +1,10 @@
 from datetime import datetime, timezone, timedelta
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
-from google.cloud import firestore as fs
 
 from config import get_settings
-from firestore import get_db
-from models import User, USERS_COL
+from database.mongodb import get_db, MongoDatabaseWrapper, USERS_COL
+from models import User
 from auth.utils import decode_token
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
@@ -13,7 +12,7 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
 
 def get_current_user(
     token: str = Depends(oauth2_scheme),
-    db: fs.Client = Depends(get_db),
+    db: MongoDatabaseWrapper = Depends(get_db),
 ) -> User:
     payload = decode_token(token)
     if not payload or payload.get("type") != "access":
@@ -47,7 +46,7 @@ oauth2_scheme_optional = OAuth2PasswordBearer(tokenUrl="/auth/login", auto_error
 
 def get_current_user_optional(
     token: str | None = Depends(oauth2_scheme_optional),
-    db: fs.Client = Depends(get_db),
+    db: MongoDatabaseWrapper = Depends(get_db),
 ) -> User | None:
     if not token:
         return None

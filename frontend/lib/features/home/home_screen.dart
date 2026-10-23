@@ -53,8 +53,10 @@ class _HomeScreenState extends State<HomeScreen>
   }
 
   Future<void> _loadData({bool force = false}) async {
+    if (!mounted) return;
     final isGuest = context.read<UserProvider>().isGuest;
     if (isGuest) {
+      if (!mounted) return;
       context.read<StatsProvider>().loadDemo();
       context.read<PracticePlanProvider>().loadPlan(isGuest: true);
       return;
@@ -62,6 +64,7 @@ class _HomeScreenState extends State<HomeScreen>
 
     // Load summary stats (feeds the 3 stat cards)
     final userId = context.read<UserProvider>().user.id;
+    if (!mounted) return;
     context.read<StatsProvider>().loadSummaryOnly(force: force, userId: userId);
 
     // Load personalized practice plan drills (Feature 6)
@@ -1172,13 +1175,18 @@ class _HomeScreenState extends State<HomeScreen>
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          Text(
-                            'Slide Deck Processing in Background',
-                            style: AppTextStyles.bodyBold.copyWith(
-                              color: AppColors.textPrimaryOf(context),
-                              fontSize: 13,
+                          Expanded(
+                            child: Text(
+                              'Slide Deck Processing in Background',
+                              style: AppTextStyles.bodyBold.copyWith(
+                                color: AppColors.textPrimaryOf(context),
+                                fontSize: 13,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
                             ),
                           ),
+                          const SizedBox(width: 8),
                           Text(
                             '${(progress * 100).toInt()}%',
                             style: AppTextStyles.caption.copyWith(
@@ -1294,13 +1302,18 @@ class _HomeScreenState extends State<HomeScreen>
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          Text(
-                            '$modeLabel Processing in Background',
-                            style: AppTextStyles.bodyBold.copyWith(
-                              color: AppColors.textPrimaryOf(context),
-                              fontSize: 13,
+                          Expanded(
+                            child: Text(
+                              '$modeLabel Processing in Background',
+                              style: AppTextStyles.bodyBold.copyWith(
+                                color: AppColors.textPrimaryOf(context),
+                                fontSize: 13,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
                             ),
                           ),
+                          const SizedBox(width: 8),
                           Container(
                             padding: const EdgeInsets.symmetric(
                               horizontal: 6,
@@ -1463,7 +1476,9 @@ class _HomeScreenState extends State<HomeScreen>
                     child: ElevatedButton(
                       onPressed: () {
                         Navigator.of(dialogCtx).pop();
-                        context.push('/results', extra: session.sessionId);
+                        if (mounted) {
+                          context.push('/results', extra: session.sessionId);
+                        }
                       },
                       style: ElevatedButton.styleFrom(
                         backgroundColor: AppColors.primaryPurple,
@@ -1589,7 +1604,9 @@ class _HomeScreenState extends State<HomeScreen>
                     child: ElevatedButton(
                       onPressed: () {
                         Navigator.of(dialogCtx).pop();
-                        context.push('/slide-coach/review');
+                        if (mounted) {
+                          context.push('/slide-coach/review');
+                        }
                       },
                       style: ElevatedButton.styleFrom(
                         backgroundColor: AppColors.primaryPurple,
@@ -1671,9 +1688,15 @@ class _PracticeModeCardState extends State<_PracticeModeCard> {
       duration: const Duration(milliseconds: 120),
       curve: Curves.easeOut,
       child: GestureDetector(
-        onTapDown: (_) => setState(() => _isPressed = true),
-        onTapUp: (_) => setState(() => _isPressed = false),
-        onTapCancel: () => setState(() => _isPressed = false),
+        onTapDown: (_) {
+          if (mounted) setState(() => _isPressed = true);
+        },
+        onTapUp: (_) {
+          if (mounted) setState(() => _isPressed = false);
+        },
+        onTapCancel: () {
+          if (mounted) setState(() => _isPressed = false);
+        },
         onTap: widget.onTap,
         child: Container(
           height: 92,

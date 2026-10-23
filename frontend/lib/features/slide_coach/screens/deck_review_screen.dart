@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import '../../../core/models/slide_coach_models.dart';
@@ -19,6 +20,14 @@ class _DeckReviewScreenState extends State<DeckReviewScreen> {
   final TextEditingController _scriptController = TextEditingController();
   final ScrollController _carouselController = ScrollController();
   int _lastSyncedSlideNumber = -1;
+
+  @override
+  void initState() {
+    super.initState();
+    _scriptController.addListener(() {
+      if (mounted) setState(() {});
+    });
+  }
 
   @override
   void dispose() {
@@ -87,7 +96,7 @@ class _DeckReviewScreenState extends State<DeckReviewScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // ── 1. Deck Summary Header Card ──
-            if (summary != null) _buildSummaryHeader(context, summary),
+            if (summary != null) _buildSummaryHeader(context, summary, deck),
 
             const SizedBox(height: 18),
 
@@ -127,13 +136,23 @@ class _DeckReviewScreenState extends State<DeckReviewScreen> {
 
                     const SizedBox(height: 14),
 
+                    // Audience Presentation Intelligence Card
+                    _buildSlideIntelCard(context, currentSlide, deck.audience),
+
+                    const SizedBox(height: 14),
+
                     // Key Takeaway Card
                     _buildKeyTakeawayCard(context, currentSlide),
 
                     const SizedBox(height: 14),
 
-                    // Talking Points (Editable)
-                    _buildTalkingPointsCard(context, currentSlide, provider),
+                    // Talking Points (What to Speak)
+                    _buildTalkingPointsCard(
+                      context,
+                      currentSlide,
+                      provider,
+                      deck.audience,
+                    ),
 
                     const SizedBox(height: 14),
 
@@ -202,7 +221,28 @@ class _DeckReviewScreenState extends State<DeckReviewScreen> {
     );
   }
 
-  Widget _buildSummaryHeader(BuildContext context, DeckSummaryModel summary) {
+  String _getAudienceLabel(String? audience) {
+    final aud = (audience ?? 'investors').toLowerCase();
+    if (aud.contains('judge') || aud.contains('hackathon')) {
+      return 'Hackathon Judges';
+    } else if (aud.contains('class') || aud.contains('academic')) {
+      return 'Class / Academic';
+    } else if (aud.contains('client') || aud.contains('customer')) {
+      return 'Potential Clients';
+    } else if (aud.contains('other') || aud.contains('general')) {
+      return 'General Audience';
+    }
+    return 'Investors / VCs';
+  }
+
+  Widget _buildSummaryHeader(
+    BuildContext context,
+    DeckSummaryModel summary,
+    SlideDeckModel deck,
+  ) {
+    final pillars = summary.getPillars(deck.audience);
+    final audienceName = _getAudienceLabel(deck.audience);
+
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16),
       padding: const EdgeInsets.all(18),
@@ -245,6 +285,33 @@ class _DeckReviewScreenState extends State<DeckReviewScreen> {
               Text('Story Arc', style: AppTextStyles.bodyBoldOf(context)),
             ],
           ),
+          const SizedBox(height: 8),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+              color: AppColors.primaryPurple.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(
+                  Icons.psychology_outlined,
+                  size: 14,
+                  color: AppColors.primaryPurple,
+                ),
+                const SizedBox(width: 4),
+                Text(
+                  'Evaluated for: $audienceName',
+                  style: const TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.primaryPurple,
+                  ),
+                ),
+              ],
+            ),
+          ),
           const SizedBox(height: 10),
           Text(summary.storyArc, style: AppTextStyles.bodyTextOf(context)),
           const SizedBox(height: 12),
@@ -257,19 +324,62 @@ class _DeckReviewScreenState extends State<DeckReviewScreen> {
           const SizedBox(height: 6),
           Row(
             children: [
-              _buildPillarBadge(context, 'Problem', summary.hasProblem),
-              const SizedBox(width: 6),
-              _buildPillarBadge(context, 'Solution', summary.hasSolution),
-              const SizedBox(width: 6),
-              _buildPillarBadge(context, 'Traction', summary.hasTraction),
-              const SizedBox(width: 6),
-              _buildPillarBadge(context, 'Ask', summary.hasAsk),
+              for (int i = 0; i < pillars.length; i++) ...[
+                if (i > 0) const SizedBox(width: 6),
+                _buildPillarBadge(
+                  context,
+                  pillars[i].label,
+                  pillars[i].isPresent,
+                  pillars[i].icon,
+                ),
+              ],
             ],
           ),
-          if (!summary.hasAsk) ...[
+          if (summary.storyArcWarnings.isNotEmpty) ...[
+            for (final warn in summary.storyArcWarnings) ...[
+              const SizedBox(height: 10),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 8,
+                ),
+                decoration: BoxDecoration(
+                  color: AppColors.dangerRed.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: AppColors.dangerRed.withValues(alpha: 0.35),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(
+                      Icons.warning_amber_rounded,
+                      color: AppColors.dangerRed,
+                      size: 18,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        warn,
+                        style: AppTextStyles.captionOf(context).copyWith(
+                          color: AppColors.dangerRed,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ] else if (!summary.hasAsk &&
+              (deck.audience.toLowerCase().contains('invest') ||
+                  deck.audience.isEmpty)) ...[
             const SizedBox(height: 10),
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              padding: const EdgeInsets.symmetric(
+                horizontal: 10,
+                vertical: 8,
+              ),
               decoration: BoxDecoration(
                 color: AppColors.dangerRed.withValues(alpha: 0.12),
                 borderRadius: BorderRadius.circular(8),
@@ -569,52 +679,361 @@ class _DeckReviewScreenState extends State<DeckReviewScreen> {
     );
   }
 
-  Widget _buildTalkingPointsCard(
+  Widget _buildSlideIntelCard(
     BuildContext context,
     SlideCoachingModel slide,
-    SlideCoachProvider provider,
+    String audience,
   ) {
+    final audienceName = _getAudienceLabel(audience);
+    final hasTip =
+        slide.audienceTip != null && slide.audienceTip!.trim().isNotEmpty;
+    final hasEmphasize =
+        slide.whatToEmphasize != null &&
+        slide.whatToEmphasize!.trim().isNotEmpty;
+    final hasAvoid =
+        slide.whatToAvoid != null && slide.whatToAvoid!.trim().isNotEmpty;
+    final hasPacing =
+        slide.deliveryPacing != null && slide.deliveryPacing!.trim().isNotEmpty;
+
+    if (!hasTip && !hasEmphasize && !hasAvoid && !hasPacing) {
+      return const SizedBox.shrink();
+    }
+
     return Container(
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: AppColors.cardOf(context),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: AppColors.borderOf(context)),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: AppColors.primaryPurple.withValues(alpha: 0.3),
+        ),
+        boxShadow: AppColors.softShadowOf(context),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Expanded(
-                child: Text(
-                  'Talking Points (Say These)',
-                  style: AppTextStyles.bodyBoldOf(context),
-                  overflow: TextOverflow.ellipsis,
+              Container(
+                padding: const EdgeInsets.all(6),
+                decoration: BoxDecoration(
+                  color: AppColors.primaryPurple.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Icon(
+                  Icons.psychology_outlined,
+                  color: AppColors.primaryPurple,
+                  size: 20,
                 ),
               ),
-              const SizedBox(width: 8),
-              Text(
-                'Auto-saved',
-                style: AppTextStyles.caption.copyWith(
-                  color: AppColors.successGreen,
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Audience Intelligence ($audienceName)',
+                      style: AppTextStyles.bodyBoldOf(context),
+                    ),
+                    Text(
+                      'How to position Slide ${slide.slideNumber} for maximum impact',
+                      style: AppTextStyles.captionOf(
+                        context,
+                      ).copyWith(fontSize: 11),
+                    ),
+                  ],
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 8),
+          if (hasTip) ...[
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: AppColors.primaryPurple.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(
+                  color: AppColors.primaryPurple.withValues(alpha: 0.2),
+                ),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Icon(
+                    Icons.tips_and_updates_outlined,
+                    color: AppColors.primaryPurple,
+                    size: 18,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      slide.audienceTip!,
+                      style: AppTextStyles.bodyTextOf(context).copyWith(
+                        fontSize: 12.5,
+                        height: 1.4,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+          if (hasEmphasize || hasAvoid) ...[
+            const SizedBox(height: 12),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (hasEmphasize)
+                  Expanded(
+                    child: Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: AppColors.successGreen.withValues(alpha: 0.08),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(
+                          color: AppColors.successGreen.withValues(alpha: 0.25),
+                        ),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              const Icon(
+                                Icons.check_circle_outline,
+                                color: AppColors.successGreen,
+                                size: 14,
+                              ),
+                              const SizedBox(width: 4),
+                              Text(
+                                'Emphasize',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.bold,
+                                  color: AppColors.successGreen,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            slide.whatToEmphasize!,
+                            style: AppTextStyles.bodyTextOf(context).copyWith(
+                              fontSize: 12,
+                              height: 1.35,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                if (hasEmphasize && hasAvoid) const SizedBox(width: 8),
+                if (hasAvoid)
+                  Expanded(
+                    child: Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: AppColors.warningAmber.withValues(alpha: 0.08),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(
+                          color: AppColors.warningAmber.withValues(alpha: 0.3),
+                        ),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              const Icon(
+                                Icons.block_outlined,
+                                color: AppColors.warningAmber,
+                                size: 14,
+                              ),
+                              const SizedBox(width: 4),
+                              Text(
+                                'Avoid',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.bold,
+                                  color: AppColors.warningAmber,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            slide.whatToAvoid!,
+                            style: AppTextStyles.bodyTextOf(context).copyWith(
+                              fontSize: 12,
+                              height: 1.35,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ],
+          if (hasPacing) ...[
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                const Icon(
+                  Icons.speed_outlined,
+                  size: 15,
+                  color: AppColors.auroraCyan,
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    'Pacing: ${slide.deliveryPacing}',
+                    style: AppTextStyles.captionOf(context).copyWith(
+                      color: AppColors.auroraCyan,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 11.5,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTalkingPointsCard(
+    BuildContext context,
+    SlideCoachingModel slide,
+    SlideCoachProvider provider,
+    String audience,
+  ) {
+    final audienceName = _getAudienceLabel(audience);
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.cardOf(context),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.borderOf(context)),
+        boxShadow: AppColors.softShadowOf(context),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(6),
+                decoration: BoxDecoration(
+                  color: AppColors.primaryPurple.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Icon(
+                  Icons.speaker_notes_outlined,
+                  color: AppColors.primaryPurple,
+                  size: 18,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Talking Points (What to Speak)',
+                      style: AppTextStyles.bodyBoldOf(context),
+                    ),
+                    Text(
+                      'Targeted for $audienceName · ${slide.targetDurationSeconds}s target',
+                      style: AppTextStyles.captionOf(context).copyWith(
+                        color: AppColors.primaryPurple,
+                        fontSize: 11,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.copy_rounded, size: 18),
+                tooltip: 'Copy all talking points',
+                color: AppColors.textSecondaryOf(context),
+                onPressed: () {
+                  final text = slide.talkingPoints
+                      .asMap()
+                      .entries
+                      .map((e) => '${e.key + 1}. ${e.value}')
+                      .join('\n');
+                  Clipboard.setData(ClipboardData(text: text));
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Talking points copied to clipboard'),
+                      duration: Duration(seconds: 2),
+                    ),
+                  );
+                },
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: AppColors.successGreen.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 6,
+                      height: 6,
+                      decoration: const BoxDecoration(
+                        color: AppColors.successGreen,
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                    const SizedBox(width: 5),
+                    Text(
+                      'Auto-saved',
+                      style: AppTextStyles.caption.copyWith(
+                        color: AppColors.successGreen,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 11,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Text(
+            'Deliver these speech cues to highlight key details without reading verbatim:',
+            style: AppTextStyles.captionOf(context).copyWith(
+              color: AppColors.textSecondaryOf(context),
+              fontSize: 12,
+            ),
+          ),
+          const SizedBox(height: 10),
           ...slide.talkingPoints.asMap().entries.map((entry) {
             final idx = entry.key;
             final pt = entry.value;
-            return Padding(
-              padding: const EdgeInsets.symmetric(vertical: 4),
+            return Container(
+              margin: const EdgeInsets.only(bottom: 10),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              decoration: BoxDecoration(
+                color: AppColors.scaffoldOf(context).withValues(alpha: 0.6),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(
+                  color: AppColors.borderOf(context).withValues(alpha: 0.6),
+                ),
+              ),
               child: Row(
-                crossAxisAlignment: CrossAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Container(
-                    width: 20,
-                    height: 20,
+                    margin: const EdgeInsets.only(top: 2),
+                    width: 22,
+                    height: 22,
                     decoration: BoxDecoration(
                       color: AppColors.primaryPurple.withValues(alpha: 0.2),
                       shape: BoxShape.circle,
@@ -623,29 +1042,35 @@ class _DeckReviewScreenState extends State<DeckReviewScreen> {
                       child: Text(
                         '${idx + 1}',
                         style: const TextStyle(
-                          fontSize: 10,
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
                           color: AppColors.primaryPurple,
                         ),
                       ),
                     ),
                   ),
-                  const SizedBox(width: 8),
+                  const SizedBox(width: 10),
                   Expanded(
                     child: TextFormField(
+                      key: ValueKey('tp_${slide.slideNumber}_$idx'),
                       initialValue: pt,
+                      minLines: 1,
+                      maxLines: 5,
+                      keyboardType: TextInputType.multiline,
                       style: AppTextStyles.bodyTextOf(context).copyWith(
-                        fontSize: 14,
+                        fontSize: 13.5,
+                        height: 1.4,
                         color: AppColors.textPrimaryOf(context),
                       ),
                       decoration: InputDecoration(
                         isDense: true,
-                        contentPadding: const EdgeInsets.symmetric(vertical: 4),
+                        contentPadding: const EdgeInsets.symmetric(vertical: 2),
                         border: InputBorder.none,
-                        hintText: 'Talking point...',
+                        hintText: 'Actionable point to speak...',
                         hintStyle: TextStyle(
                           color: AppColors.textSecondaryOf(
                             context,
-                          ).withValues(alpha: 0.6),
+                          ).withValues(alpha: 0.5),
                         ),
                       ),
                       onChanged: (newVal) {
@@ -655,10 +1080,50 @@ class _DeckReviewScreenState extends State<DeckReviewScreen> {
                       },
                     ),
                   ),
+                  InkWell(
+                    borderRadius: BorderRadius.circular(12),
+                    onTap: () {
+                      final updated = List<String>.from(slide.talkingPoints)
+                        ..removeAt(idx);
+                      provider.updateCurrentSlideTalkingPoints(updated);
+                    },
+                    child: Padding(
+                      padding: const EdgeInsets.all(4),
+                      child: Icon(
+                        Icons.close_rounded,
+                        size: 16,
+                        color: AppColors.textSecondaryOf(
+                          context,
+                        ).withValues(alpha: 0.6),
+                      ),
+                    ),
+                  ),
                 ],
               ),
             );
           }),
+          const SizedBox(height: 4),
+          OutlinedButton.icon(
+            onPressed: () {
+              final updated = List<String>.from(slide.talkingPoints)..add('');
+              provider.updateCurrentSlideTalkingPoints(updated);
+            },
+            icon: const Icon(Icons.add_rounded, size: 16),
+            label: const Text(
+              'Add Talking Point',
+              style: TextStyle(fontSize: 12),
+            ),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: AppColors.primaryPurple,
+              side: BorderSide(
+                color: AppColors.primaryPurple.withValues(alpha: 0.4),
+              ),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            ),
+          ),
         ],
       ),
     );
@@ -669,6 +1134,13 @@ class _DeckReviewScreenState extends State<DeckReviewScreen> {
     SlideCoachingModel slide,
     SlideCoachProvider provider,
   ) {
+    final scriptText = _scriptController.text.trim();
+    final words =
+        scriptText.isEmpty ? 0 : scriptText.split(RegExp(r'\s+')).length;
+    final estimatedSeconds = (words / 2.3).round(); // ~140 words/min
+    final isOverTarget =
+        estimatedSeconds > (slide.targetDurationSeconds * 1.25);
+
     return ExpansionTile(
       collapsedBackgroundColor: AppColors.cardOf(context),
       backgroundColor: AppColors.cardOf(context),
@@ -685,22 +1157,62 @@ class _DeckReviewScreenState extends State<DeckReviewScreen> {
         color: AppColors.primaryPurple,
         size: 20,
       ),
-      title: Text(
-        'Word-for-Word Pitch Script',
-        style: AppTextStyles.bodyBoldOf(context),
+      title: Row(
+        children: [
+          Expanded(
+            child: Text(
+              'Word-for-Word Pitch Script',
+              style: AppTextStyles.bodyBoldOf(context),
+            ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.copy_rounded, size: 16),
+            tooltip: 'Copy script',
+            onPressed: () {
+              Clipboard.setData(ClipboardData(text: _scriptController.text));
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Script copied to clipboard'),
+                  duration: Duration(seconds: 2),
+                ),
+              );
+            },
+          ),
+        ],
       ),
-      subtitle: Text(
-        'Expand to view or edit full speech',
-        style: AppTextStyles.captionOf(context).copyWith(fontSize: 11),
+      subtitle: Row(
+        children: [
+          Text(
+            '$words words (~${estimatedSeconds}s spoken)',
+            style: AppTextStyles.captionOf(context).copyWith(
+              fontSize: 11,
+              color: isOverTarget
+                  ? AppColors.warningAmber
+                  : AppColors.primaryPurple,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          if (isOverTarget) ...[
+            const SizedBox(width: 4),
+            const Text(
+              '· May exceed target',
+              style: TextStyle(
+                fontSize: 11,
+                color: AppColors.warningAmber,
+                fontStyle: FontStyle.italic,
+              ),
+            ),
+          ],
+        ],
       ),
       childrenPadding: const EdgeInsets.all(14),
       children: [
         TextField(
           controller: _scriptController,
-          maxLines: 5,
+          maxLines: 6,
           style: AppTextStyles.bodyTextOf(context).copyWith(
             fontSize: 14,
-            height: 1.4,
+            height: 1.45,
             color: AppColors.textPrimaryOf(context),
           ),
           decoration: InputDecoration(
@@ -747,13 +1259,40 @@ class _DeckReviewScreenState extends State<DeckReviewScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  'Slide Transition Hook',
-                  style: AppTextStyles.captionOf(
-                    context,
-                  ).copyWith(fontWeight: FontWeight.bold),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      'Slide Transition Hook',
+                      style: AppTextStyles.captionOf(
+                        context,
+                      ).copyWith(fontWeight: FontWeight.bold),
+                    ),
+                    InkWell(
+                      borderRadius: BorderRadius.circular(12),
+                      onTap: () {
+                        Clipboard.setData(
+                          ClipboardData(text: slide.transitionToNext),
+                        );
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Transition copied to clipboard'),
+                            duration: Duration(seconds: 2),
+                          ),
+                        );
+                      },
+                      child: const Padding(
+                        padding: EdgeInsets.all(4),
+                        child: Icon(
+                          Icons.copy_rounded,
+                          size: 14,
+                          color: AppColors.auroraCyan,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 2),
+                const SizedBox(height: 4),
                 Text(
                   '"${slide.transitionToNext}"',
                   style: AppTextStyles.bodyTextOf(
@@ -906,7 +1445,12 @@ class _DeckReviewScreenState extends State<DeckReviewScreen> {
     );
   }
 
-  Widget _buildPillarBadge(BuildContext context, String label, bool covered) {
+  Widget _buildPillarBadge(
+    BuildContext context,
+    String label,
+    bool covered, [
+    IconData? categoryIcon,
+  ]) {
     return Expanded(
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
@@ -923,12 +1467,27 @@ class _DeckReviewScreenState extends State<DeckReviewScreen> {
         ),
         child: Column(
           children: [
-            Icon(
-              covered ? Icons.check_circle_rounded : Icons.cancel_rounded,
-              color: covered ? AppColors.successGreen : AppColors.dangerRed,
-              size: 14,
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                if (categoryIcon != null) ...[
+                  Icon(
+                    categoryIcon,
+                    size: 13,
+                    color: covered
+                        ? AppColors.successGreen
+                        : AppColors.dangerRed,
+                  ),
+                  const SizedBox(width: 3),
+                ],
+                Icon(
+                  covered ? Icons.check_circle_rounded : Icons.cancel_rounded,
+                  color: covered ? AppColors.successGreen : AppColors.dangerRed,
+                  size: 13,
+                ),
+              ],
             ),
-            const SizedBox(height: 2),
+            const SizedBox(height: 3),
             Text(
               label,
               style: TextStyle(
@@ -937,6 +1496,7 @@ class _DeckReviewScreenState extends State<DeckReviewScreen> {
                 color: covered ? AppColors.successGreen : AppColors.dangerRed,
               ),
               overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.center,
             ),
           ],
         ),

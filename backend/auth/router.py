@@ -1,23 +1,23 @@
 """Auth routes: signup, login, guest, refresh, upgrade-guest."""
+import logging
 import uuid
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from firebase_admin import auth as fb_auth
-from google.cloud import firestore as fs
+from pymongo.errors import DuplicateKeyError
 
 from auth.dependencies import get_current_user
 from auth.utils import create_access_token, create_refresh_token, decode_token, hash_password, verify_password
 from config import get_settings
-from firestore import get_db
+from database.mongodb import get_db, MongoDatabaseWrapper, USERS_COL, USER_EMAILS_COL
 from limiter import limiter
-from models import User, USERS_COL
+from models import User
 from schemas import AuthResponse, FirebaseLoginRequest, LoginRequest, RefreshRequest, SignupRequest, UpgradeGuestRequest, UserResponse
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/auth", tags=["auth"])
 settings = get_settings()
-
-USER_EMAILS_COL = "user_emails"
 
 
 def _build_auth_response(user: User) -> AuthResponse:
@@ -39,68 +39,61 @@ def _build_auth_response(user: User) -> AuthResponse:
     )
 
 
-def _register_user_atomic(db: fs.Client, user: User, normalized_email: str):
+def _register_user_atomic(db: MongoDatabaseWrapper, user: User, normalized_email: str):
     """Atomically registers user and locks unique email in user_emails collection."""
-    email_ref = db.collection(USER_EMAILS_COL).document(normalized_email)
-    user_ref = db.collection(USERS_COL).document(user.id)
-
-    # Check existing users collection for backward compatibility
-    existing = db.collection(USERS_COL).where("email", "==", normalized_email).limit(1).get()
-    if len(list(existing)) > 0:
+    # Check existing users collection
+    existing_user = db[USERS_COL].find_one({"email": normalized_email})
+    if existing_user:
         raise HTTPException(status_code=400, detail="Email already registered")
 
-    if hasattr(db, "transaction"):
-        transaction = db.transaction()
+    existing_email = db[USER_EMAILS_COL].find_one({"email": normalized_email})
+    if existing_email:
+        raise HTTPException(status_code=400, detail="Email already registered")
 
-        @fs.transactional
-        def _txn(t):
-            email_doc = email_ref.get(transaction=t)
-            if email_doc.exists:
-                raise HTTPException(status_code=400, detail="Email already registered")
-            t.set(email_ref, {"user_id": user.id, "created_at": datetime.now(timezone.utc)})
-            t.set(user_ref, user.to_dict())
-
-        _txn(transaction)
-    else:
-        email_doc = email_ref.get()
-        if email_doc.exists:
-            raise HTTPException(status_code=400, detail="Email already registered")
-        email_ref.set({"user_id": user.id, "created_at": datetime.now(timezone.utc)})
-        user_ref.set(user.to_dict())
+    try:
+        # Reserve email
+        db[USER_EMAILS_COL].insert_one({
+            "_id": normalized_email,
+            "id": normalized_email,
+            "email": normalized_email,
+            "user_id": user.id,
+            "created_at": datetime.now(timezone.utc),
+        })
+        # Save user document
+        db.collection(USERS_COL).document(user.id).set(user.to_dict())
+    except DuplicateKeyError:
+        raise HTTPException(status_code=400, detail="Email already registered")
 
 
-def _upgrade_user_atomic(db: fs.Client, user_id: str, normalized_email: str, update_dict: dict):
+def _upgrade_user_atomic(db: MongoDatabaseWrapper, user_id: str, normalized_email: str, update_dict: dict):
     """Atomically reserves email and updates guest user document."""
-    email_ref = db.collection(USER_EMAILS_COL).document(normalized_email)
-    user_ref = db.collection(USERS_COL).document(user_id)
-
-    existing = db.collection(USERS_COL).where("email", "==", normalized_email).limit(1).get()
-    if len(list(existing)) > 0:
+    existing_user = db[USERS_COL].find_one({"email": normalized_email, "id": {"$ne": user_id}})
+    if existing_user:
         raise HTTPException(status_code=400, detail="Email already registered")
 
-    if hasattr(db, "transaction"):
-        transaction = db.transaction()
+    existing_email = db[USER_EMAILS_COL].find_one({"email": normalized_email})
+    if existing_email and existing_email.get("user_id") != user_id:
+        raise HTTPException(status_code=400, detail="Email already registered")
 
-        @fs.transactional
-        def _txn(t):
-            email_doc = email_ref.get(transaction=t)
-            if email_doc.exists:
-                raise HTTPException(status_code=400, detail="Email already registered")
-            t.set(email_ref, {"user_id": user_id, "created_at": datetime.now(timezone.utc)})
-            t.update(user_ref, update_dict)
-
-        _txn(transaction)
-    else:
-        email_doc = email_ref.get()
-        if email_doc.exists:
-            raise HTTPException(status_code=400, detail="Email already registered")
-        email_ref.set({"user_id": user_id, "created_at": datetime.now(timezone.utc)})
-        user_ref.update(update_dict)
+    try:
+        db[USER_EMAILS_COL].update_one(
+            {"email": normalized_email},
+            {"$set": {
+                "id": normalized_email,
+                "email": normalized_email,
+                "user_id": user_id,
+                "created_at": datetime.now(timezone.utc),
+            }},
+            upsert=True,
+        )
+        db.collection(USERS_COL).document(user_id).update(update_dict)
+    except DuplicateKeyError:
+        raise HTTPException(status_code=400, detail="Email already registered")
 
 
 @router.post("/signup", response_model=AuthResponse)
 @limiter.limit("5/minute")
-def signup(request: Request, req: SignupRequest, db: fs.Client = Depends(get_db)):
+def signup(request: Request, req: SignupRequest, db: MongoDatabaseWrapper = Depends(get_db)):
     email_normalized = req.email.strip().lower()
     user = User(
         id=str(uuid.uuid4()),
@@ -115,29 +108,29 @@ def signup(request: Request, req: SignupRequest, db: fs.Client = Depends(get_db)
 
 @router.post("/login", response_model=AuthResponse)
 @limiter.limit("5/minute")
-def login(request: Request, req: LoginRequest, db: fs.Client = Depends(get_db)):
+def login(request: Request, req: LoginRequest, db: MongoDatabaseWrapper = Depends(get_db)):
     email_normalized = req.email.strip().lower()
-    docs = db.collection(USERS_COL).where("email", "==", email_normalized).limit(1).get()
-    doc_list = list(docs)
-    if not doc_list:
+    doc_dict = db[USERS_COL].find_one({"email": email_normalized})
+    if not doc_dict:
         raise HTTPException(status_code=401, detail="Invalid email or password")
-    user = User.from_dict(doc_list[0].to_dict())
+    user = User.from_dict(doc_dict)
     if not user.password_hash or not verify_password(req.password, user.password_hash):
         raise HTTPException(status_code=401, detail="Invalid email or password")
     return _build_auth_response(user)
 
 
 @router.post("/firebase", response_model=AuthResponse)
-def firebase_login(req: FirebaseLoginRequest, db: fs.Client = Depends(get_db)):
+def firebase_login(req: FirebaseLoginRequest, db: MongoDatabaseWrapper = Depends(get_db)):
     """Exchange a Firebase ID token (from the Flutter app) for backend JWTs.
 
     The Firebase uid is used as the user document id, so the same person
-    always maps to the same Firestore user. The user doc is created on first use.
+    always maps to the same MongoDB user. The user doc is created on first use.
     """
     try:
         decoded = fb_auth.verify_id_token(req.id_token)
-    except Exception:
-        raise HTTPException(status_code=401, detail="Invalid Firebase token")
+    except Exception as exc:
+        logger.warning("[auth] Firebase token verification failed: %s", exc)
+        raise HTTPException(status_code=401, detail=f"Invalid Firebase token: {exc}")
 
     uid: str = decoded["uid"]
     doc = db.collection(USERS_COL).document(uid).get()
@@ -157,6 +150,7 @@ def firebase_login(req: FirebaseLoginRequest, db: fs.Client = Depends(get_db)):
         if email:
             db.collection(USER_EMAILS_COL).document(email).set({
                 "user_id": uid,
+                "email": email,
                 "created_at": datetime.now(timezone.utc),
             })
     return _build_auth_response(user)
@@ -164,7 +158,7 @@ def firebase_login(req: FirebaseLoginRequest, db: fs.Client = Depends(get_db)):
 
 @router.post("/guest", response_model=AuthResponse)
 @limiter.limit("10/hour")
-def guest_login(request: Request, db: fs.Client = Depends(get_db)):
+def guest_login(request: Request, db: MongoDatabaseWrapper = Depends(get_db)):
     """Creates an anonymous account. History is preserved if the user later upgrades."""
     user = User(
         id=str(uuid.uuid4()),
@@ -178,7 +172,7 @@ def guest_login(request: Request, db: fs.Client = Depends(get_db)):
 
 @router.post("/refresh")
 @limiter.limit("10/minute")
-def refresh_token(request: Request, req: RefreshRequest, db: fs.Client = Depends(get_db)):
+def refresh_token(request: Request, req: RefreshRequest, db: MongoDatabaseWrapper = Depends(get_db)):
     payload = decode_token(req.refresh_token)
     if not payload or payload.get("type") != "refresh":
         raise HTTPException(status_code=401, detail="Invalid refresh token")
@@ -193,7 +187,7 @@ def refresh_token(request: Request, req: RefreshRequest, db: fs.Client = Depends
 def upgrade_guest(
     req: UpgradeGuestRequest,
     current_user: User = Depends(get_current_user),
-    db: fs.Client = Depends(get_db),
+    db: MongoDatabaseWrapper = Depends(get_db),
 ):
     """Convert a guest account into a full account — keeps all session history."""
     if not current_user.is_guest:
@@ -220,11 +214,11 @@ def upgrade_guest(
 @router.delete("/account")
 def delete_account(
     current_user: User = Depends(get_current_user),
-    db: fs.Client = Depends(get_db),
+    db: MongoDatabaseWrapper = Depends(get_db),
 ):
     """
     DELETE /auth/account:
-    Permanently deletes all user data across D1, Firestore, Storage, and Auth.
+    Permanently deletes all user data across D1, MongoDB, Storage, and Auth.
     """
     from auth.account_service import delete_user_account
     result = delete_user_account(current_user, db=db)

@@ -139,8 +139,15 @@ class AuthRepository {
 
   /// Delete user account permanently
   Future<void> deleteAccount() async {
-    await _api.dio.delete('/users/me');
-    await logout();
+    try {
+      try {
+        await _api.dio.delete('/users/me');
+      } catch (_) {
+        await _api.dio.delete('/account');
+      }
+    } finally {
+      await logout();
+    }
   }
 
   /// Submit user feedback

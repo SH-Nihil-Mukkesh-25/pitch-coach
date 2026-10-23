@@ -312,6 +312,41 @@ class _ProgressScreenState extends State<ProgressScreen>
     );
   }
 
+  String _formatTrendDate(String rawDate, bool isWeek) {
+    if (rawDate.isEmpty) return '';
+    final dt = DateTime.tryParse(rawDate);
+    if (dt != null) {
+      if (isWeek) {
+        const weekdays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+        return weekdays[dt.weekday - 1];
+      } else {
+        const months = [
+          'Jan',
+          'Feb',
+          'Mar',
+          'Apr',
+          'May',
+          'Jun',
+          'Jul',
+          'Aug',
+          'Sep',
+          'Oct',
+          'Nov',
+          'Dec',
+        ];
+        return '${months[dt.month - 1]} ${dt.day}';
+      }
+    }
+    return rawDate;
+  }
+
+  double _calculateBottomInterval(int count) {
+    if (count <= 7) return 1.0;
+    if (count <= 14) return 2.0;
+    if (count <= 21) return 3.0;
+    return ((count - 1) / 5).ceilToDouble().clamp(1.0, 30.0);
+  }
+
   Widget _buildConfidenceChartCard(StatsProvider provider, bool isLoading) {
     final isWeek = _selectedRange == 'Week';
 
@@ -327,9 +362,20 @@ class _ProgressScreenState extends State<ProgressScreen>
       for (int i = 0; i < trendData.length; i++) {
         spots.add(FlSpot(i.toDouble(), trendData[i].confidence));
       }
-      // Use real date labels from trend data
-      xLabels = trendData.map((t) => t.date).toList();
+      // Use real date labels from trend data formatted concisely
+      xLabels = trendData
+          .map((t) => _formatTrendDate(t.date, isWeek))
+          .toList();
     }
+
+    final isSinglePoint = spots.length == 1;
+    final double minX = isSinglePoint ? -1.0 : 0.0;
+    final double maxX = isSinglePoint
+        ? 1.0
+        : (spots.length <= 1 ? 1.0 : (spots.length - 1).toDouble());
+    final double bottomInterval = spots.length <= 1
+        ? 1.0
+        : _calculateBottomInterval(spots.length);
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -399,6 +445,8 @@ class _ProgressScreenState extends State<ProgressScreen>
                   )
                 : LineChart(
                     LineChartData(
+                      minX: minX,
+                      maxX: maxX,
                       minY: 0,
                       maxY: 100,
                       gridData: FlGridData(
@@ -406,7 +454,9 @@ class _ProgressScreenState extends State<ProgressScreen>
                         drawVerticalLine: false,
                         horizontalInterval: 25,
                         getDrawingHorizontalLine: (val) => FlLine(
-                          color: AppColors.divider.withValues(alpha: 0.6),
+                          color: AppColors.dividerOf(
+                            context,
+                          ).withValues(alpha: 0.6),
                           strokeWidth: 1,
                         ),
                       ),
@@ -424,8 +474,9 @@ class _ProgressScreenState extends State<ProgressScreen>
                             interval: 25,
                             getTitlesWidget: (val, meta) => Text(
                               '${val.toInt()}',
-                              style: AppTextStyles.caption.copyWith(
+                              style: AppTextStyles.captionOf(context).copyWith(
                                 fontSize: 10,
+                                color: AppColors.textSecondaryOf(context),
                               ),
                             ),
                           ),
@@ -433,20 +484,31 @@ class _ProgressScreenState extends State<ProgressScreen>
                         bottomTitles: AxisTitles(
                           sideTitles: SideTitles(
                             showTitles: true,
+                            reservedSize: 28,
+                            interval: bottomInterval,
                             getTitlesWidget: (val, meta) {
-                              final idx = val.toInt();
+                              final rounded = val.round();
+                              // Discard fractional ticks from fl_chart's interpolator
+                              if ((val - rounded).abs() > 0.01) {
+                                return const SizedBox.shrink();
+                              }
+                              final idx = rounded;
                               if (idx >= 0 && idx < xLabels.length) {
                                 return Padding(
                                   padding: const EdgeInsets.only(top: 6.0),
                                   child: Text(
                                     xLabels[idx],
-                                    style: AppTextStyles.caption.copyWith(
-                                      fontSize: 10,
-                                    ),
+                                    style: AppTextStyles.captionOf(context)
+                                        .copyWith(
+                                          fontSize: 10,
+                                          color: AppColors.textSecondaryOf(
+                                            context,
+                                          ),
+                                        ),
                                   ),
                                 );
                               }
-                              return const SizedBox();
+                              return const SizedBox.shrink();
                             },
                           ),
                         ),
@@ -454,7 +516,7 @@ class _ProgressScreenState extends State<ProgressScreen>
                       borderData: FlBorderData(show: false),
                       lineBarsData: [
                         LineChartBarData(
-                          isCurved: true,
+                          isCurved: spots.length > 2,
                           curveSmoothness: 0.3,
                           color: AppColors.primaryPurple,
                           barWidth: 3,
@@ -502,7 +564,11 @@ class _ProgressScreenState extends State<ProgressScreen>
         if (context.read<UserProvider>().isGuest) {
           provider.loadDemo();
         } else {
-          provider.loadAll(trendRange: label.toLowerCase());
+          final userId = context.read<UserProvider>().user.id;
+          provider.loadAll(
+            trendRange: label.toLowerCase(),
+            userId: userId,
+          );
         }
       },
       child: Container(

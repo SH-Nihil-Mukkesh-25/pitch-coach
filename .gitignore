@@ -74,6 +74,8 @@ backend/avatars/
 backend/*.db
 backend/*.db-shm
 backend/*.db-wal
+.wrangler/
+*.d1_backfill_checkpoint
 
 # ─── Flutter / Dart / Pub ─────────────────────────────────────────────────────
 **/doc/api/
@@ -131,3 +133,6 @@ ui-debug.log
 # ─── Symbolication & Obfuscation ──────────────────────────────────────────────
 app.*.symbols
 app.*.map.json
+
+
+screenshots_app_backup/*

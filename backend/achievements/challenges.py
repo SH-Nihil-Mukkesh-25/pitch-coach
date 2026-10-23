@@ -12,8 +12,7 @@ from typing import Any, Dict, List, Optional
 import logging
 
 from d1.d1_client import get_d1_client
-from firestore import get_db
-from models import PracticeSession, SESSIONS_COL, USERS_COL
+from database.mongodb import get_db, SESSIONS_COL, USERS_COL
 
 logger = logging.getLogger(__name__)
 
@@ -73,7 +72,7 @@ def evaluate_user_challenges(
     claimed = claimed_set or set()
 
     d1 = d1_client or get_d1_client()
-    firestore_db = db or get_db()
+    mongo_db = db or get_db()
 
     sessions: List[Dict[str, Any]] = []
 
@@ -95,14 +94,14 @@ def evaluate_user_challenges(
                     "filler_word_count": int(r.get("filler_word_count") or 0),
                 })
         except Exception as e:
-            logger.warning("[challenges] D1 query failed: %s, falling back to Firestore", e)
+            logger.warning("[challenges] D1 query failed: %s, falling back to MongoDB", e)
             sessions = []
 
-    # 2. Firestore fallback if D1 not available or empty and firestore exists
-    if not sessions and firestore_db:
+    # 2. MongoDB fallback if D1 not available or empty and database exists
+    if not sessions and mongo_db:
         try:
             docs = (
-                firestore_db.collection(SESSIONS_COL)
+                mongo_db.collection(SESSIONS_COL)
                 .where("user_id", "==", user_id)
                 .where("is_analyzed", "==", True)
                 .get()

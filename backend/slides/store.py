@@ -1,4 +1,4 @@
-"""Storage layer for slide decks: Firestore persistence with local disk image cache and Firebase Storage integration."""
+"""Storage layer for slide decks: MongoDB persistence with local disk image cache and Firebase Storage integration."""
 import json
 import logging
 import os
@@ -8,8 +8,9 @@ from datetime import datetime, timezone, timedelta
 from typing import List, Optional
 
 from config import get_settings
-from firestore import get_bucket, get_db
-from models import SlideDeck, SLIDE_DECKS_COL
+from database.mongodb import SLIDE_DECKS_COL, get_mongo_db, get_db
+from firestore import get_bucket
+from models import SlideDeck
 
 logger = logging.getLogger(__name__)
 
@@ -18,7 +19,7 @@ STUCK_CUTOFF_SECONDS = 600  # 10 minutes
 
 
 class DeckStore:
-    """Manages slide deck persistence across Firestore, Firebase Storage, and local storage."""
+    """Manages slide deck persistence across MongoDB, Storage, and local storage."""
 
     def __init__(self):
         self.settings = get_settings()
@@ -38,25 +39,10 @@ class DeckStore:
         return d
 
     def get_slide_image_path(self, deck_id: str, slide_number: int) -> str:
-        local_path = os.path.join(self.get_slides_dir(deck_id), f"slide_{slide_number}.jpg")
-        if os.path.exists(local_path):
-            return local_path
-
-        # If not present locally, try downloading from Firebase Storage
-        if self.settings.FIREBASE_STORAGE_BUCKET:
-            try:
-                bucket = get_bucket()
-                blob = bucket.blob(f"slides/{deck_id}/slide_{slide_number}.jpg")
-                if blob.exists():
-                    blob.download_to_filename(local_path)
-                    return local_path
-            except Exception as e:
-                logger.warning("Could not download slide %s image from Storage: %s", slide_number, e)
-
-        return local_path
+        return os.path.join(self.get_slides_dir(deck_id), f"slide_{slide_number}.jpg")
 
     def upload_slide_images_to_storage(self, deck_id: str, image_paths: List[str]) -> None:
-        """Uploads rendered slide JPEG images to Firebase Storage bucket."""
+        """Optionally uploads slide images to Firebase Storage bucket if configured."""
         if not self.settings.FIREBASE_STORAGE_BUCKET:
             return
         try:
@@ -65,11 +51,12 @@ class DeckStore:
                 if not os.path.exists(path):
                     continue
                 filename = os.path.basename(path)
-                blob = bucket.blob(f"slides/{deck_id}/{filename}")
+                blob_path = f"slides/{deck_id}/{filename}"
+                blob = bucket.blob(blob_path)
                 blob.upload_from_filename(path, content_type="image/jpeg")
-            logger.info("Uploaded %d slide images to Storage for deck %s", len(image_paths), deck_id)
+            logger.info("Successfully uploaded %d slide images for deck %s to storage", len(image_paths), deck_id)
         except Exception as e:
-            logger.warning("Failed uploading slide images to Storage for deck %s: %s", deck_id, e)
+            logger.warning("Could not upload slide images for deck %s to storage: %s", deck_id, e)
 
     def _update_cache(self, deck: SlideDeck) -> None:
         self._memory_cache[deck.id] = deck
@@ -77,22 +64,25 @@ class DeckStore:
         if len(self._memory_cache) > MAX_CACHE_SIZE:
             self._memory_cache.popitem(last=False)
 
-    def check_and_mark_stuck(self, deck: SlideDeck) -> bool:
-        """Checks if a processing deck has exceeded the 10-minute timeout and marks it failed."""
+    def check_and_mark_stuck(self, deck: SlideDeck, cutoff_seconds: int = STUCK_CUTOFF_SECONDS) -> bool:
+        """If deck is stuck in processing for > cutoff_seconds, mark it failed."""
         if deck.status == "processing":
             now = datetime.now(timezone.utc)
             delta = (now - deck.updated_at).total_seconds()
-            if delta > STUCK_CUTOFF_SECONDS:
-                logger.warning("Deck %s is stuck in processing for %.1fs. Marking as failed.", deck.id, delta)
+            if delta > cutoff_seconds:
+                logger.warning(
+                    "Deck %s has been stuck in processing for %.1fs. Marking as failed.",
+                    deck.id, delta,
+                )
                 deck.status = "failed"
-                deck.error = "Processing timed out (stuck job sweeper)"
+                deck.error = "Processing timed out"
                 deck.failure_reason = "Processing timed out"
                 self.save(deck)
                 return True
         return False
 
     def save(self, deck: SlideDeck) -> None:
-        """Persist to LRU cache, local metadata.json, and Firestore."""
+        """Persist to LRU cache, local metadata.json, and MongoDB."""
         deck.updated_at = datetime.now(timezone.utc)
         self._update_cache(deck)
 
@@ -108,17 +98,24 @@ class DeckStore:
         except Exception as e:
             logger.warning("Could not save local deck metadata for %s: %s", deck.id, e)
 
-        # 2. Firestore document (single source of truth - propagates write errors)
+        # 2. MongoDB document (single source of truth - propagates write errors)
         try:
-            db = get_db()
+            db = get_mongo_db()
             if db is not None:
-                db.collection(SLIDE_DECKS_COL).document(deck.id).set(deck.to_dict())
+                payload = deck.to_dict()
+                payload["id"] = deck.id
+                payload["_id"] = deck.id
+                db[SLIDE_DECKS_COL].update_one(
+                    {"$or": [{"id": deck.id}, {"_id": deck.id}]},
+                    {"$set": payload},
+                    upsert=True,
+                )
         except Exception as e:
-            logger.error("Firestore save failed for deck %s: %s", deck.id, e)
+            logger.error("MongoDB save failed for deck %s: %s", deck.id, e)
             raise e
 
     def get(self, deck_id: str) -> Optional[SlideDeck]:
-        """Fetch deck by ID from memory, Firestore, or disk."""
+        """Fetch deck by ID from memory, MongoDB, or disk."""
         deck: Optional[SlideDeck] = None
 
         # 1. Memory cache
@@ -126,16 +123,16 @@ class DeckStore:
             deck = self._memory_cache[deck_id]
             self._memory_cache.move_to_end(deck_id)
         else:
-            # 2. Firestore
+            # 2. MongoDB
             try:
-                db = get_db()
+                db = get_mongo_db()
                 if db is not None:
-                    doc = db.collection(SLIDE_DECKS_COL).document(deck_id).get()
-                    if doc.exists:
-                        deck = SlideDeck.from_dict(doc.to_dict())
+                    doc = db[SLIDE_DECKS_COL].find_one({"$or": [{"id": deck_id}, {"_id": deck_id}]})
+                    if doc:
+                        deck = SlideDeck.from_dict(doc)
                         self._update_cache(deck)
             except Exception as e:
-                logger.warning("Firestore get failed for deck %s: %s", deck_id, e)
+                logger.warning("MongoDB get failed for deck %s: %s", deck_id, e)
 
             # 3. Local disk fallback
             if deck is None:
@@ -165,35 +162,21 @@ class DeckStore:
             if deck.user_id == user_id and deck.content_hash == content_hash and deck.status == "done":
                 return deck
 
-        # Firestore check
+        # MongoDB check
         try:
-            db = get_db()
+            db = get_mongo_db()
             if db is not None:
-                try:
-                    from google.cloud.firestore_v1.base_query import FieldFilter
-                    docs = (
-                        db.collection(SLIDE_DECKS_COL)
-                        .where(filter=FieldFilter("user_id", "==", user_id))
-                        .where(filter=FieldFilter("content_hash", "==", content_hash))
-                        .where(filter=FieldFilter("status", "==", "done"))
-                        .limit(1)
-                        .stream()
-                    )
-                except Exception:
-                    docs = (
-                        db.collection(SLIDE_DECKS_COL)
-                        .where("user_id", "==", user_id)
-                        .where("content_hash", "==", content_hash)
-                        .where("status", "==", "done")
-                        .limit(1)
-                        .stream()
-                    )
-                for doc in docs:
-                    deck = SlideDeck.from_dict(doc.to_dict())
+                doc = db[SLIDE_DECKS_COL].find_one({
+                    "user_id": user_id,
+                    "content_hash": content_hash,
+                    "status": "done",
+                })
+                if doc:
+                    deck = SlideDeck.from_dict(doc)
                     self._update_cache(deck)
                     return deck
         except Exception as e:
-            logger.warning("Firestore query by hash failed: %s", e)
+            logger.warning("MongoDB query by hash failed: %s", e)
 
         return None
 
@@ -201,27 +184,15 @@ class DeckStore:
         """List all slide decks for a user."""
         decks = []
         try:
-            db = get_db()
+            db = get_mongo_db()
             if db is not None:
-                try:
-                    from google.cloud.firestore_v1.base_query import FieldFilter
-                    docs = (
-                        db.collection(SLIDE_DECKS_COL)
-                        .where(filter=FieldFilter("user_id", "==", user_id))
-                        .stream()
-                    )
-                except Exception:
-                    docs = (
-                        db.collection(SLIDE_DECKS_COL)
-                        .where("user_id", "==", user_id)
-                        .stream()
-                    )
-                for doc in docs:
-                    decks.append(SlideDeck.from_dict(doc.to_dict()))
+                cursor = db[SLIDE_DECKS_COL].find({"user_id": user_id}).sort("created_at", -1)
+                for doc in cursor:
+                    decks.append(SlideDeck.from_dict(doc))
         except Exception as e:
-            logger.warning("Firestore list_user_decks failed: %s", e)
+            logger.warning("MongoDB list_user_decks failed: %s", e)
 
-        # Fallback to local memory if firestore failed or returned empty
+        # Fallback to local memory if mongodb failed or returned empty
         if not decks:
             decks = [d for d in self._memory_cache.values() if d.user_id == user_id]
 
@@ -242,7 +213,7 @@ class DeckStore:
         return decks
 
     def delete(self, deck_id: str) -> bool:
-        """Delete from memory, Firestore, Storage, and local files."""
+        """Delete from memory, MongoDB, Storage, and local files."""
         self._memory_cache.pop(deck_id, None)
 
         # Remove local disk files
@@ -263,14 +234,14 @@ class DeckStore:
             except Exception as e:
                 logger.warning("Failed to delete Storage blobs for deck %s: %s", deck_id, e)
 
-        # Remove Firestore doc
+        # Remove MongoDB doc
         try:
-            db = get_db()
+            db = get_mongo_db()
             if db is not None:
-                db.collection(SLIDE_DECKS_COL).document(deck_id).delete()
+                db[SLIDE_DECKS_COL].delete_one({"$or": [{"id": deck_id}, {"_id": deck_id}]})
             return True
         except Exception as e:
-            logger.warning("Firestore delete failed for deck %s: %s", deck_id, e)
+            logger.warning("MongoDB delete failed for deck %s: %s", deck_id, e)
             return False
 
     def sweep_stuck_decks(self, cutoff_seconds: int = STUCK_CUTOFF_SECONDS) -> int:
@@ -287,28 +258,22 @@ class DeckStore:
                 self.save(deck)
                 count += 1
 
-        # 2. Sweep Firestore
+        # 2. Sweep MongoDB
         try:
-            db = get_db()
+            db = get_mongo_db()
             if db is not None:
-                docs = (
-                    db.collection(SLIDE_DECKS_COL)
-                    .where("status", "==", "processing")
-                    .stream()
+                res = db[SLIDE_DECKS_COL].update_many(
+                    {"status": "processing", "updated_at": {"$lt": cutoff}},
+                    {"$set": {
+                        "status": "failed",
+                        "error": "Processing timed out (sweeper)",
+                        "failure_reason": "Processing timed out",
+                        "updated_at": datetime.now(timezone.utc),
+                    }}
                 )
-                for doc in docs:
-                    data = doc.to_dict()
-                    updated = data.get("updated_at")
-                    if isinstance(updated, datetime) and updated < cutoff:
-                        db.collection(SLIDE_DECKS_COL).document(doc.id).update({
-                            "status": "failed",
-                            "error": "Processing timed out (sweeper)",
-                            "failure_reason": "Processing timed out",
-                            "updated_at": datetime.now(timezone.utc),
-                        })
-                        count += 1
+                count += res.modified_count
         except Exception as e:
-            logger.warning("Error sweeping stuck decks from Firestore: %s", e)
+            logger.warning("Error sweeping stuck decks from MongoDB: %s", e)
 
         return count
 
@@ -331,7 +296,7 @@ class DeckStore:
                         self.delete(deck_id)
                         deleted_ids.add(deck_id)
                 else:
-                    # Orphaned folder with no metadata/Firestore doc
+                    # Orphaned folder with no metadata/MongoDB doc
                     try:
                         mtime = datetime.fromtimestamp(os.path.getmtime(deck_path), tz=timezone.utc)
                         if mtime < cutoff:
@@ -340,22 +305,18 @@ class DeckStore:
                     except Exception as e:
                         logger.warning("Error checking orphaned folder %s: %s", deck_path, e)
 
-        # 2. Check expired Firestore decks that may not have local folders
+        # 2. Check expired MongoDB decks that may not have local folders
         try:
-            db = get_db()
+            db = get_mongo_db()
             if db is not None:
-                docs = (
-                    db.collection(SLIDE_DECKS_COL)
-                    .where("created_at", "<", cutoff)
-                    .get()
-                )
+                docs = db[SLIDE_DECKS_COL].find({"created_at": {"$lt": cutoff}})
                 for doc in docs:
-                    deck_id = doc.id
+                    deck_id = doc.get("id") or str(doc.get("_id"))
                     if deck_id not in deleted_ids:
                         self.delete(deck_id)
                         deleted_ids.add(deck_id)
         except Exception as e:
-            logger.warning("Error querying expired decks from Firestore: %s", e)
+            logger.warning("Error querying expired decks from MongoDB: %s", e)
 
         return len(deleted_ids)
 

@@ -554,20 +554,23 @@ class _ProfileScreenState extends State<ProfileScreen>
         await sessionResults.reset();
       } catch (_) {}
       try {
-        await settings.clearAllSettings();
+        await settings.clearAllSettings(preserveTheme: true);
       } catch (_) {}
 
       final success = await user.deleteAccount();
       if (mounted) {
+        // Always navigate to the initial screen ('/' -> OnboardingScreen)
+        context.go('/');
         if (success) {
-          context.go('/');
+          AppToast.success(context, 'Account and all data successfully deleted');
         } else {
-          AppToast.error(context, 'Account deletion failed');
+          AppToast.info(context, 'Account data wiped from device.');
         }
       }
     } catch (e) {
       if (mounted) {
-        AppToast.error(context, 'Failed to delete account: $e');
+        context.go('/');
+        AppToast.info(context, 'Account data cleared from device.');
       }
     }
   }

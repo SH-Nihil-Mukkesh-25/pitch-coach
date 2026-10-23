@@ -1,4 +1,12 @@
 // Typed Dart models for the Slide Coach feature.
+import 'package:flutter/material.dart';
+
+class NarrativePillarDisplay {
+  final String label;
+  final bool isPresent;
+  final IconData icon;
+  const NarrativePillarDisplay(this.label, this.isPresent, this.icon);
+}
 
 class DeckSummaryModel {
   final String storyArc;
@@ -11,6 +19,7 @@ class DeckSummaryModel {
   final bool hasAsk;
   final List<String> missingPillars;
   final List<String> storyArcWarnings;
+  final String? audience;
 
   const DeckSummaryModel({
     required this.storyArc,
@@ -23,7 +32,48 @@ class DeckSummaryModel {
     this.hasAsk = false,
     this.missingPillars = const [],
     this.storyArcWarnings = const [],
+    this.audience,
   });
+
+  List<NarrativePillarDisplay> getPillars(String? fallbackAudience) {
+    final aud = (audience ?? fallbackAudience ?? 'investors').toLowerCase();
+    if (aud.contains('judge') || aud.contains('hackathon')) {
+      return [
+        NarrativePillarDisplay('Problem', hasProblem, Icons.report_problem_outlined),
+        NarrativePillarDisplay('Architecture', hasSolution, Icons.account_tree_outlined),
+        NarrativePillarDisplay('Prototype', hasTraction, Icons.precision_manufacturing_outlined),
+        NarrativePillarDisplay('Roadmap', hasAsk, Icons.alt_route_outlined),
+      ];
+    } else if (aud.contains('class') || aud.contains('academic')) {
+      return [
+        NarrativePillarDisplay('Context', hasProblem, Icons.menu_book_outlined),
+        NarrativePillarDisplay('Methodology', hasSolution, Icons.biotech_outlined),
+        NarrativePillarDisplay('Results', hasTraction, Icons.bar_chart_outlined),
+        NarrativePillarDisplay('Conclusion', hasAsk, Icons.fact_check_outlined),
+      ];
+    } else if (aud.contains('client') || aud.contains('customer')) {
+      return [
+        NarrativePillarDisplay('Pain Point', hasProblem, Icons.sentiment_dissatisfied_outlined),
+        NarrativePillarDisplay('Value Prop', hasSolution, Icons.verified_outlined),
+        NarrativePillarDisplay('Proof', hasTraction, Icons.shield_outlined),
+        NarrativePillarDisplay('Next Steps', hasAsk, Icons.touch_app_outlined),
+      ];
+    } else if (aud.contains('other') || aud.contains('general')) {
+      return [
+        NarrativePillarDisplay('Hook', hasProblem, Icons.wb_incandescent_outlined),
+        NarrativePillarDisplay('Core Story', hasSolution, Icons.auto_stories_outlined),
+        NarrativePillarDisplay('Impact', hasTraction, Icons.public_outlined),
+        NarrativePillarDisplay('Takeaway', hasAsk, Icons.flag_outlined),
+      ];
+    } else {
+      return [
+        NarrativePillarDisplay('Problem', hasProblem, Icons.error_outline),
+        NarrativePillarDisplay('Solution', hasSolution, Icons.lightbulb_outline),
+        NarrativePillarDisplay('Traction', hasTraction, Icons.trending_up),
+        NarrativePillarDisplay('Ask', hasAsk, Icons.handshake_outlined),
+      ];
+    }
+  }
 
   factory DeckSummaryModel.fromJson(Map<String, dynamic> json) {
     return DeckSummaryModel(
@@ -53,6 +103,7 @@ class DeckSummaryModel {
               ?.map((e) => e.toString())
               .toList() ??
           [],
+      audience: json['audience'] as String?,
     );
   }
 
@@ -67,6 +118,7 @@ class DeckSummaryModel {
     'has_ask': hasAsk,
     'missing_pillars': missingPillars,
     'story_arc_warnings': storyArcWarnings,
+    'audience': audience,
   };
 }
 
@@ -88,6 +140,10 @@ class SlideCoachingModel {
   final bool missingCta;
   final String visualHierarchyRating;
   final List<String> designCritique;
+  final String? audienceTip;
+  final String? whatToEmphasize;
+  final String? whatToAvoid;
+  final String? deliveryPacing;
 
   SlideCoachingModel({
     required this.slideNumber,
@@ -107,6 +163,10 @@ class SlideCoachingModel {
     this.missingCta = false,
     this.visualHierarchyRating = 'good',
     this.designCritique = const [],
+    this.audienceTip,
+    this.whatToEmphasize,
+    this.whatToAvoid,
+    this.deliveryPacing,
   });
 
   factory SlideCoachingModel.fromJson(Map<String, dynamic> json) {
@@ -146,6 +206,10 @@ class SlideCoachingModel {
               ?.map((e) => e.toString())
               .toList() ??
           [],
+      audienceTip: json['audience_tip'] as String?,
+      whatToEmphasize: json['what_to_emphasize'] as String?,
+      whatToAvoid: json['what_to_avoid'] as String?,
+      deliveryPacing: json['delivery_pacing'] as String?,
     );
   }
 
@@ -167,6 +231,10 @@ class SlideCoachingModel {
     'missing_cta': missingCta,
     'visual_hierarchy_rating': visualHierarchyRating,
     'design_critique': designCritique,
+    'audience_tip': audienceTip,
+    'what_to_emphasize': whatToEmphasize,
+    'what_to_avoid': whatToAvoid,
+    'delivery_pacing': deliveryPacing,
   };
 }
 
